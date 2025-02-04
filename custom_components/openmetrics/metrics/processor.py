@@ -7,12 +7,25 @@ from ..const import (
     PROVIDER_TYPE_NODE,
 )
 from ..lib.metrics_core import Metric, Sample
+from ..metrics.data import MetadataData
 from ..providers.base import MetricsProvider, ProviderConfig
 from ..providers.registry import ProviderRegistry
 
 
 class ProcessingError(HomeAssistantError):
-    """Error to indicate a client processing error."""
+    """Error to indicate issues related to processing."""
+
+
+class ProviderError(ProcessingError):
+    """Error to indicate issues related to provider."""
+
+
+class ResourcesError(ProcessingError):
+    """Error to indicate issues related to resources."""
+
+
+class MetricsError(ProcessingError):
+    """Error to indicate issues related to metrics."""
 
 
 class MetricsProcessor:
@@ -28,7 +41,7 @@ class MetricsProcessor:
         """Ensure provider is detected and configured."""
         if self._provider is None:
             if not families:
-                raise ProcessingError("No metrics found")
+                raise MetricsError("No metrics found")
 
             for family in families:
                 self._provider = self.registry.get_provider(family.name)
@@ -37,13 +50,13 @@ class MetricsProcessor:
                     break
 
             if not self._provider:
-                raise ProcessingError("No supported provider found")
+                raise ProviderError("No supported provider found")
 
-    def extract_metadata(self, families: list[Metric]) -> dict:
+    def extract_metadata(self, families: list[Metric]) -> MetadataData:
         """Extract provider metadata and available metrics."""
         self._ensure_provider(families)
         if not self._provider:
-            raise ProcessingError("No provider configuration available")
+            raise ProviderError("No provider defined")
 
         # Process all metric families
         for family in families:
@@ -58,7 +71,7 @@ class MetricsProcessor:
         """Extract metrics for specified resources."""
         self._ensure_provider(families)
         if not self._config:
-            raise ProcessingError("No provider configuration available")
+            raise ProviderError("No provider configuration defined")
 
         result = {}
 

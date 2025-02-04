@@ -8,6 +8,7 @@ from homeassistant.exceptions import HomeAssistantError
 
 from .lib import parser, prom_parser
 from .lib.metrics_core import Metric
+from .metrics.data import MetadataData
 from .metrics.processor import MetricsProcessor, ProcessingError
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ class OpenMetricsClient:
         _LOGGER.debug("Metrics successfully parsed")
         return list(families)
 
-    async def get_metadata(self) -> dict:
+    async def get_metadata(self) -> MetadataData:
         """Get metadata from a metrics provider."""
         response_text, content_type = await self._async_request_data()
         families = self._parse_data(response_text, content_type)

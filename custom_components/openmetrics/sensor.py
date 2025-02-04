@@ -21,6 +21,8 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
+from custom_components.openmetrics.metrics.data import ResourceInfoData
+
 from .const import (
     DOMAIN,
     METRIC_CPU_TEMP,
@@ -138,10 +140,10 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up OpenMetrics sensors based on a config entry."""
-    resources = hass.data[DOMAIN][entry.entry_id]["resources"]
+    resources: list[ResourceInfoData] = hass.data[DOMAIN][entry.entry_id]["resources"]
     coordinators = hass.data[DOMAIN][entry.entry_id]["coordinators"]
     for resource in resources:
-        coordinator = coordinators[resource["name"]]
+        coordinator = coordinators[resource.name]
         sensors = create_resource_sensors(hass, entry, resource, coordinator)
         # Add sensors to hass
         async_add_entities(sensors)
@@ -161,20 +163,18 @@ def create_resource_sensors(
     return sensors
 
 
-def create_sensor(resource, coordinator, description, host):
+def create_sensor(resource: ResourceInfoData, coordinator, description, host):
     """Create a sensor for an OpenMetrics resource."""
-    unique_id = f"{host}_{resource['name']}"
+    unique_id = f"{host}_{resource.name}"
     entry_type = None
-    version = None
-    if resource["type"] == RESOURCE_TYPE_CONTAINER:
+    if resource.type == RESOURCE_TYPE_CONTAINER:
         entry_type = DeviceEntryType.SERVICE
-        version = resource.get("version")
     # Device info object
     device_info = DeviceInfo(
-        name=resource["name"],
-        model=resource["software"],
-        manufacturer=resource.get("vendor"),
-        sw_version=version,
+        name=resource.name,
+        model=resource.software,
+        # manufacturer=resource.get("vendor"),
+        sw_version=resource.version,
         identifiers={(DOMAIN, unique_id)},
         entry_type=entry_type,
     )

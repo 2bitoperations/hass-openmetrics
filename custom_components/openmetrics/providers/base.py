@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from ..lib.metrics_core import Metric
 from ..metrics import MetricFilter
+from ..metrics.data import MetadataData, ProviderInfoData
 
 
 @dataclass
@@ -24,9 +25,15 @@ class MetricsProvider(ABC):
 
     def __init__(self):
         """Initialize metrics provider."""
-        self._provider_info = {}
-        self._resources = {}
-        self._available_metrics = set()
+        self._metadata = MetadataData(
+            provider_info=ProviderInfoData(
+                name=self.get_config().provider_name,
+                type=self.get_config().resource_type,
+                version=None,
+            ),
+            resources=[],
+            available_metrics=[],
+        )
 
     @abstractmethod
     def get_config(self) -> ProviderConfig:
@@ -48,10 +55,6 @@ class MetricsProvider(ABC):
         """Extract available metrics from metric family."""
         raise NotImplementedError
 
-    def get_metadata(self) -> dict:
+    def get_metadata(self) -> MetadataData:
         """Return collected metadata."""
-        return {
-            "provider": self._provider_info,
-            "resources": self._resources,
-            "metrics": list(self._available_metrics),
-        }
+        return self._metadata

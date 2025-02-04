@@ -22,7 +22,6 @@ from homeassistant.const import (
     CONF_VERIFY_SSL,
 )
 from homeassistant.core import callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
@@ -42,6 +41,8 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
+from .metrics.data import MetadataData
+from .metrics.processor import MetricsError, ResourcesError
 from .options_flow import OpenMetricsOptionsFlowHandler
 
 _LOGGER = logging.getLogger(__name__)
@@ -63,17 +64,12 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     VERSION = 2
     title: str
     data: dict[str, Any]
-    metadata: dict[str, Any]
+    metadata: MetadataData
     provider_name: str
 
     def _get_available_resources(self) -> list[str]:
         """Get available resources from the metadata."""
-        resources = self.metadata.get("resources", [])
-        return [resource["name"] for resource in resources.values()]
-
-    def _get_available_metrics(self) -> list[str]:
-        """Get the available provider metrics."""
-        return self.metadata.get("metrics", [])
+        return [resource.name for resource in self.metadata.resources if resource.name]
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -92,8 +88,8 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     user_input
                 )
                 # Extract provider info
-                provider_name = self.metadata["provider"].get("name")
-                provider_version = self.metadata["provider"].get("version")
+                provider_name = self.metadata.provider_info.name
+                provider_version = self.metadata.provider_info.version
                 # Define entry title
                 host = urllib.parse.urlparse(user_input[CONF_URL]).netloc
                 self.title = host
@@ -139,19 +135,16 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             # Create client
             client = OpenMetricsClient(url, verify_ssl, username, password)
             # Get metadata
-            response = await client.get_metadata()
-            # Check if provider is recognized
-            if "name" not in response["provider"]:
-                _LOGGER.warning("No provider recognized")
-            # Check if resources are available
-            if len(response.get("resources", [])) == 0:
+            metadata = await client.get_metadata()
+            # # Check if resources are available
+            if len(metadata.resources) == 0:
                 raise ResourcesError("No resources available")
             # Define scan interval
             data[CONF_SCAN_INTERVAL] = DEFAULT_SCAN_INTERVAL
         except aiohttp.ClientError as e:
             raise e from CannotConnectError
         else:
-            return (data, response)
+            return (data, metadata)
 
     async def async_step_resources(
         self, user_input: dict[str, Any] | None = None
@@ -213,7 +206,7 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Handle the metrics definition step."""
         errors: dict[str, str] = {}
-        available_metrics = self._get_available_metrics()
+        available_metrics = self.metadata.available_metrics
         selected = available_metrics
         # Process user input if provided
         if user_input is not None:
@@ -273,11 +266,3 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Get the options flow for this handler."""
         return OpenMetricsOptionsFlowHandler(config_entry)
-
-
-class MetricsError(HomeAssistantError):
-    """Error to indicate issues related to metrics."""
-
-
-class ResourcesError(HomeAssistantError):
-    """Error to indicate issues related to resources."""

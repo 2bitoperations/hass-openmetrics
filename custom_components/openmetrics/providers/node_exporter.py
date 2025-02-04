@@ -1,6 +1,8 @@
 """Node Exporter provider."""
 
-import uuid
+from custom_components.openmetrics.metrics.data import (
+    ResourceInfoData,
+)
 
 from ..const import (
     METRIC_CPU_TEMP,
@@ -40,10 +42,10 @@ class NodeExporterProvider(MetricsProvider):
     def __init__(self):
         """Initialize node exporter provider."""
         super().__init__()
-        self.uuid = str(uuid.uuid4())
-        self._provider_info = {}
-        self._resources = {self.uuid: {}}
-        self._available_metrics = set()
+        self.resource_info = ResourceInfoData(
+            type=RESOURCE_TYPE_NODE, name=None, software=None, version=None
+        )
+        self._metadata.resources.append(self.resource_info)
 
     def get_config(self) -> ProviderConfig:
         """Return provider configuration."""
@@ -127,11 +129,9 @@ class NodeExporterProvider(MetricsProvider):
     def extract_provider_info(self, family: Metric) -> None:
         """Extract and store provider information."""
         if family.name == self.get_config().identifier_metric and family.samples:
-            self._provider_info = {
-                "name": self.get_config().provider_name,
-                "type": self.get_config().resource_type,
-                "version": family.samples[0].labels[self.get_config().version_label],
-            }
+            self._metadata.provider_info.version = family.samples[0].labels[
+                self.get_config().version_label
+            ]
 
     def extract_resource_info(self, family: Metric) -> None:
         """Extract and store node resource information."""
@@ -139,23 +139,17 @@ class NodeExporterProvider(MetricsProvider):
             for sample in family.samples:
                 nodename = sample.labels.get("nodename", None)
                 if nodename:
-                    self._resources[self.uuid].update(
-                        {
-                            "type": RESOURCE_TYPE_NODE,
-                            "name": nodename,
-                        }
-                    )
+                    self.resource_info.name = nodename
         elif family.name == NODE_OS_INFO:
             for sample in family.samples:
-                self._resources[self.uuid].update(
-                    {
-                        "software": sample.labels.get("pretty_name", ""),
-                        "version": sample.labels.get("version", ""),
-                    }
-                )
+                self.resource_info.software = sample.labels.get("pretty_name", "")
+                self.resource_info.version = sample.labels.get("version", "")
 
     def extract_available_metrics(self, family: Metric) -> None:
         """Extract and store available metrics."""
         for metric_filter in self.get_config().metric_filters:
-            if family.name == metric_filter.metric_key:
-                self._available_metrics.add(metric_filter.metric_name)
+            if (
+                family.name == metric_filter.metric_key
+                and metric_filter.metric_name not in self._metadata.available_metrics
+            ):
+                self._metadata.available_metrics.append(metric_filter.metric_name)

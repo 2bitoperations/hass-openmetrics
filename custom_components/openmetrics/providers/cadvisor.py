@@ -27,6 +27,7 @@ from ..const import (
 )
 from ..lib.metrics_core import Metric
 from ..metrics import MetricFilter
+from ..metrics.data import ResourceInfoData
 from .base import MetricsProvider, ProviderConfig
 
 
@@ -36,9 +37,6 @@ class CadvisorProvider(MetricsProvider):
     def __init__(self):
         """Initialize cAdvisor provider."""
         super().__init__()
-        self._provider_info = {}
-        self._resources = {}
-        self._available_metrics = set()
 
     def get_config(self) -> ProviderConfig:
         """Return provider configuration."""
@@ -140,29 +138,34 @@ class CadvisorProvider(MetricsProvider):
     def extract_provider_info(self, family: Metric) -> None:
         """Extract and store provider information."""
         if family.name == self.get_config().identifier_metric and family.samples:
-            self._provider_info = {
-                "name": self.get_config().provider_name,
-                "type": self.get_config().resource_type,
-                "version": family.samples[0].labels[self.get_config().version_label],
-            }
+            self._metadata.provider_info.version = family.samples[0].labels[
+                self.get_config().version_label
+            ]
 
     def extract_resource_info(self, family: Metric) -> None:
         """Extract and store container resource information."""
         if family.name == CONTAINER_START_TIME:
+            # Clear existing resources
+            self._metadata.resources.clear()
             for sample in family.samples:
                 name = sample.labels.get("name", None)
                 if name is not None and name != "":
-                    self._resources[name] = {
-                        "type": RESOURCE_TYPE_CONTAINER,
-                        "name": name,
-                        "software": sample.labels.get("image", ""),
-                        "version": sample.labels.get(
-                            "container_label_org_opencontainers_image_version", ""
-                        ),
-                    }
+                    self._metadata.resources.append(
+                        ResourceInfoData(
+                            type=RESOURCE_TYPE_CONTAINER,
+                            name=name,
+                            software=sample.labels.get("image", ""),
+                            version=sample.labels.get(
+                                "container_label_org_opencontainers_image_version", ""
+                            ),
+                        )
+                    )
 
     def extract_available_metrics(self, family: Metric) -> None:
         """Extract and store available metrics."""
         for metric_filter in self.get_config().metric_filters:
-            if family.name == metric_filter.metric_key:
-                self._available_metrics.add(metric_filter.metric_name)
+            if (
+                family.name == metric_filter.metric_key
+                and metric_filter.metric_name not in self._metadata.available_metrics
+            ):
+                self._metadata.available_metrics.append(metric_filter.metric_name)

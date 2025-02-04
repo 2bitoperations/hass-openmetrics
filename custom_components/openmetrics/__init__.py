@@ -51,16 +51,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Filter metadata of configured resources
         resources = []
         coordinators = {}
-        for resource in metadata["resources"].values():
-            if resource["name"] in entry.data[CONF_RESOURCES]:
+        for resource in metadata.resources:
+            if resource.name and resource.name in entry.data[CONF_RESOURCES]:
                 resources.append(resource)
                 coordinator = OpenMetricsDataUpdateCoordinator(
                     hass,
                     client=client,
-                    resources=[resource["name"]],
+                    resources=[resource.name],
                     update_interval=int(entry.data[CONF_SCAN_INTERVAL]),
                 )
-                coordinators[resource["name"]] = coordinator
+                coordinators[resource.name] = coordinator
         # Get the host name from the URL
         host = urllib.parse.urlparse(url).netloc
         # Store required entry data in hass domain entry object
@@ -135,10 +135,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.version == 1:
         version = 2
         # Extract provider info
-        provider_name = metadata["provider"].get("name")
-        provider_version = metadata["provider"].get("version")
+        provider_name = metadata.provider_info.name
+        provider_version = metadata.provider_info.version
         # Extract metadata
-        available_metrics = metadata["metrics"]
+        available_metrics = metadata.available_metrics
         # Upgrade title
         host = urllib.parse.urlparse(url).netloc
         title = host

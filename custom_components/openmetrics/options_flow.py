@@ -4,7 +4,6 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import (
@@ -35,6 +34,8 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import OpenMetricsDataUpdateCoordinator
+from .metrics.data import MetadataData
+from .metrics.processor import MetricsError, ResourcesError
 from .sensor import SENSORS, create_resource_sensors, create_sensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,20 +44,16 @@ _LOGGER = logging.getLogger(__name__)
 class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
     """Options flow handler for the OpenMetrics integration."""
 
+    metadata: MetadataData
+
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
         self.client = self._create_client(dict(config_entry.data))
-        self.metadata = {}
 
     def _get_available_resources(self) -> list[str]:
         """Get available resources from the metadata."""
-        resources = self.metadata.get("resources", [])
-        return [resource["name"] for resource in resources.values()]
-
-    def _get_available_metrics(self) -> list[str]:
-        """Get the available provider metrics."""
-        return self.metadata.get("metrics", [])
+        return [resource.name for resource in self.metadata.resources if resource.name]
 
     def _get_platform(self, type: str) -> EntityPlatform:
         platforms = self.hass.data["entity_platform"][DOMAIN]
@@ -139,9 +136,9 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
                 configured_scan_interval = user_input[CONF_SCAN_INTERVAL]
         # Define data schema
         try:
-            self.metadata = await self._async_get_metadata()
+            self.metadata = await self.client.get_metadata()
             available_resources = self._get_available_resources()
-            available_metrics = list(dict.fromkeys(self._get_available_metrics()))
+            available_metrics = self.metadata.available_metrics
         except CannotConnectError as e:
             _LOGGER.error("Failed to connect: %s", str(e))
             errors["base"] = "cannot_connect"
@@ -292,7 +289,6 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
     ) -> bool:
         """Remove a resource from Home Assistant."""
         device_registry = self.hass.data[dr.DATA_REGISTRY]
-        # for device in device_registry.devices.data.values():
         for config_entry in device.config_entries:
             if (
                 config_entry == self.config_entry.entry_id
@@ -323,8 +319,8 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
     async def _async_add_resource_to_hass(self, resource_name: str) -> bool:
         """Add a resource to Home Assistant."""
         device_registry = self.hass.data[dr.DATA_REGISTRY]
-        for resource in self.metadata.get("resources", []):
-            if resource["name"] == resource_name:
+        for resource in self.metadata.resources:
+            if resource.name == resource_name:
                 # Create coordinator
                 coordinator = OpenMetricsDataUpdateCoordinator(
                     self.hass,
@@ -356,7 +352,7 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
                 await self.sensor_platform.async_add_entities(sensors)
                 # Add coordinator to config entry
                 self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinators"][
-                    resource["name"]
+                    resource.name
                 ] = coordinator
                 # Add resource to config entry
                 self.hass.data[DOMAIN][self.config_entry.entry_id]["resources"].append(
@@ -445,21 +441,3 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
                 )
                 return True
         return False
-
-    async def _async_get_metadata(self) -> dict:
-        """Get metadata from OpenMetrics provider."""
-        try:
-            # Get metadata
-            metadata = await self.client.get_metadata()
-        except aiohttp.ClientError as e:
-            raise CannotConnectError(str(e)) from e
-        else:
-            return metadata
-
-
-class MetricsError(HomeAssistantError):
-    """Error to indicate issues related to metrics."""
-
-
-class ResourcesError(HomeAssistantError):
-    """Error to indicate issues related to resources."""
