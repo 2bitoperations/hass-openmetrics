@@ -31,20 +31,16 @@ from homeassistant.helpers.selector import (
 
 from .client import (
     CannotConnectError,
+    ClientError,
     InvalidAuthError,
     OpenMetricsClient,
-    ProcessingError,
     RequestError,
 )
 from .const import (
     CONF_METRICS,
     CONF_RESOURCES,
-    CONTAINER_METRICS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    NODE_METRICS,
-    PROVIDER_TYPE_CONTAINER,
-    PROVIDER_TYPE_NODE,
 )
 from .options_flow import OpenMetricsOptionsFlowHandler
 
@@ -73,22 +69,11 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     def _get_available_resources(self) -> list[str]:
         """Get available resources from the metadata."""
         resources = self.metadata.get("resources", [])
-        return [resource["name"] for resource in resources]
+        return [resource["name"] for resource in resources.values()]
 
-    def _get_available_metrics(self) -> dict[str, dict[str, Any]]:
+    def _get_available_metrics(self) -> list[str]:
         """Get the available provider metrics."""
-        provider_metrics = {}
-        available_metrics = self.metadata.get("metrics", [])
-        provider_type = self.metadata["provider"]["type"]
-        if provider_type == PROVIDER_TYPE_NODE:
-            provider_metrics = NODE_METRICS
-        elif provider_type == PROVIDER_TYPE_CONTAINER:
-            provider_metrics = CONTAINER_METRICS
-        return {
-            metric_name: metric_data
-            for metric_name, metric_data in provider_metrics.items()
-            if metric_name in available_metrics
-        }
+        return self.metadata.get("metrics", [])
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -128,7 +113,7 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             except RequestError as e:
                 _LOGGER.error("Request error: %s", str(e))
                 errors["base"] = "request_error"
-            except ProcessingError as e:
+            except ClientError as e:
                 _LOGGER.error("Processing error: %s", str(e))
                 errors["base"] = "processing_error"
             except ResourcesError as e:
@@ -228,8 +213,7 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Handle the metrics definition step."""
         errors: dict[str, str] = {}
-        available_provider_metrics = self._get_available_metrics()
-        available_metrics = list(dict.fromkeys(available_provider_metrics))
+        available_metrics = self._get_available_metrics()
         selected = available_metrics
         # Process user input if provided
         if user_input is not None:
@@ -237,11 +221,11 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 # Validate input
                 config_input = self._validate_metrics_step_input(user_input)
                 # Set entry data
-                metrics = {}
-                for metric_key, metric_data in available_provider_metrics.items():
-                    if metric_key in config_input[CONF_METRICS]:
-                        if metric_key not in metrics:
-                            metrics[metric_key] = metric_data
+                metrics = []
+                for metric in available_metrics:
+                    if metric in config_input[CONF_METRICS]:
+                        if metric not in metrics:
+                            metrics.append(metric)
                 self.data[CONF_METRICS] = metrics
                 # Create entry
                 return self.async_create_entry(title=self.title, data=self.data)

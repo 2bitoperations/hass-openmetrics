@@ -46,43 +46,6 @@ NODE_FILESYSTEM_FREE = "node_filesystem_free_bytes"
 NODE_NETWORK_RECEIVE = "node_network_receive_bytes"
 NODE_NETWORK_TRANSMIT = "node_network_transmit_bytes"
 
-NODE_METRICS = {
-    METRIC_UPTIME_SECONDS: {
-        NODE_TIME: {},
-        NODE_BOOT_TIME: {},
-    },
-    METRIC_CPU_TEMP: {
-        NODE_CPU_TEMP: {"type": "cpu-thermal"},
-    },
-    METRIC_CPU_USAGE_PCT: {
-        NODE_CPU_IDLE_SECONDS: {"mode": "idle"},
-    },
-    METRIC_MEMORY_USAGE_BYTES: {
-        NODE_MEMORY_FREE: {},
-        NODE_MEMORY_TOTAL: {},
-        NODE_MEMORY_SWAP_TOTAL: {},
-    },
-    METRIC_MEMORY_USAGE_PCT: {
-        NODE_MEMORY_FREE: {},
-        NODE_MEMORY_TOTAL: {},
-        NODE_MEMORY_SWAP_TOTAL: {},
-    },
-    METRIC_DISK_USAGE_BYTES: {
-        NODE_FILESYSTEM_SIZE: {"mountpoint": "/"},
-        NODE_FILESYSTEM_FREE: {"mountpoint": "/"},
-    },
-    METRIC_DISK_USAGE_PCT: {
-        NODE_FILESYSTEM_SIZE: {"mountpoint": "/"},
-        NODE_FILESYSTEM_FREE: {"mountpoint": "/"},
-    },
-    METRIC_NETWORK_RECEIVE_BYTES: {
-        NODE_NETWORK_RECEIVE: {"device": "eth0"},
-    },
-    METRIC_NETWORK_TRANSMIT_BYTES: {
-        NODE_NETWORK_TRANSMIT: {"device": "eth0"},
-    },
-}
-
 CADVISOR_VERSION_INFO = "cadvisor_version_info"
 MACHINE_CPU_CORES = "machine_cpu_cores"
 MACHINE_MEMORY = "machine_memory_bytes"
@@ -96,41 +59,3 @@ CONTAINER_FS_USAGE = "container_fs_usage_bytes"
 CONTAINER_FS_LIMIT = "container_fs_limit_bytes"
 CONTAINER_NETWORK_RECEIVE = "container_network_receive_bytes"
 CONTAINER_NETWORK_TRANSMIT = "container_network_transmit_bytes"
-
-CONTAINER_METRICS = {
-    METRIC_UPTIME_SECONDS: {
-        CONTAINER_START_TIME: {"image": "*", "name": "*"},
-    },
-    METRIC_CPU_USAGE_PCT: {
-        MACHINE_CPU_CORES: {},
-        CONTAINER_CPU_USAGE: {"image": "*", "name": "*"},
-    },
-    METRIC_MEMORY_USAGE_BYTES: {
-        MACHINE_MEMORY: {},
-        MACHINE_SWAP: {},
-        CONTAINER_MEMORY_LIMIT: {"image": "*", "name": "*"},
-        CONTAINER_MEMORY_USAGE: {"image": "*", "name": "*"},
-        CONTAIENR_MEMORY_SWAP: {"image": "*", "name": "*"},
-    },
-    METRIC_MEMORY_USAGE_PCT: {
-        MACHINE_MEMORY: {},
-        MACHINE_SWAP: {},
-        CONTAINER_MEMORY_LIMIT: {"image": "*", "name": "*"},
-        CONTAINER_MEMORY_USAGE: {"image": "*", "name": "*"},
-        CONTAIENR_MEMORY_SWAP: {"image": "*", "name": "*"},
-    },
-    METRIC_DISK_USAGE_BYTES: {
-        CONTAINER_FS_USAGE: {"image": "*", "name": "*"},
-        CONTAINER_FS_LIMIT: {"image": "*", "name": "*"},
-    },
-    METRIC_DISK_USAGE_PCT: {
-        CONTAINER_FS_USAGE: {"image": "*", "name": "*"},
-        CONTAINER_FS_LIMIT: {"image": "*", "name": "*"},
-    },
-    METRIC_NETWORK_RECEIVE_BYTES: {
-        CONTAINER_NETWORK_RECEIVE: {"image": "*", "name": "*"},
-    },
-    METRIC_NETWORK_TRANSMIT_BYTES: {
-        CONTAINER_NETWORK_TRANSMIT: {"image": "*", "name": "*"},
-    },
-}

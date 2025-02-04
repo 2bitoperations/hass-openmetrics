@@ -19,9 +19,9 @@ from homeassistant.core import HomeAssistant
 
 from .client import (
     CannotConnectError,
+    ClientError,
     InvalidAuthError,
     OpenMetricsClient,
-    ProcessingError,
     RequestError,
 )
 from .const import DOMAIN
@@ -51,7 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Filter metadata of configured resources
         resources = []
         coordinators = {}
-        for resource in metadata["resources"]:
+        for resource in metadata["resources"].values():
             if resource["name"] in entry.data[CONF_RESOURCES]:
                 resources.append(resource)
                 coordinator = OpenMetricsDataUpdateCoordinator(
@@ -84,7 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except RequestError as e:
         _LOGGER.error("Resources error: %s", str(e))
         return False
-    except ProcessingError as e:
+    except ClientError as e:
         _LOGGER.error("Processing error: %s", str(e))
         return False
     except ValueError as e:

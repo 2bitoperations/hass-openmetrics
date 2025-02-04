@@ -32,11 +32,7 @@ from .client import CannotConnectError, InvalidAuthError, OpenMetricsClient
 from .const import (
     CONF_METRICS,
     CONF_RESOURCES,
-    CONTAINER_METRICS,
     DOMAIN,
-    NODE_METRICS,
-    PROVIDER_TYPE_CONTAINER,
-    PROVIDER_TYPE_NODE,
 )
 from .coordinator import OpenMetricsDataUpdateCoordinator
 from .sensor import SENSORS, create_resource_sensors, create_sensor
@@ -56,22 +52,11 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
     def _get_available_resources(self) -> list[str]:
         """Get available resources from the metadata."""
         resources = self.metadata.get("resources", [])
-        return [resource["name"] for resource in resources]
+        return [resource["name"] for resource in resources.values()]
 
-    def _get_available_metrics(self) -> dict[str, dict[str, Any]]:
+    def _get_available_metrics(self) -> list[str]:
         """Get the available provider metrics."""
-        provider_metrics = {}
-        available_metrics = self.metadata.get("metrics", [])
-        provider_type = self.metadata["provider"]["type"]
-        if provider_type == PROVIDER_TYPE_NODE:
-            provider_metrics = NODE_METRICS
-        elif provider_type == PROVIDER_TYPE_CONTAINER:
-            provider_metrics = CONTAINER_METRICS
-        return {
-            metric_name: metric_data
-            for metric_name, metric_data in provider_metrics.items()
-            if metric_name in available_metrics
-        }
+        return self.metadata.get("metrics", [])
 
     def _get_platform(self, type: str) -> EntityPlatform:
         platforms = self.hass.data["entity_platform"][DOMAIN]

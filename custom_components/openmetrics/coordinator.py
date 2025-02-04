@@ -12,9 +12,9 @@ from homeassistant.util.unit_conversion import BaseUnitConverter
 
 from .client import (
     CannotConnectError,
+    ClientError,
     InvalidAuthError,
     OpenMetricsClient,
-    ProcessingError,
     RequestError,
 )
 from .const import (
@@ -94,7 +94,7 @@ class OpenMetricsDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Authentication failed: %s", str(e))
         except RequestError as e:
             _LOGGER.error("Resources error: %s", str(e))
-        except ProcessingError as e:
+        except ClientError as e:
             _LOGGER.error("Processing error: %s", str(e))
         except ValueError as e:
             _LOGGER.error("Value error: %s", str(e))
@@ -328,6 +328,7 @@ class OpenMetricsDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _calculate_uptime(self, resource, metrics):
         """Calculate uptime."""
+        start_time = None
         uptime_seconds = None
         # Node Exporter
         if NODE_BOOT_TIME in metrics:
@@ -430,6 +431,12 @@ class OpenMetricsDataUpdateCoordinator(DataUpdateCoordinator):
                     float(start_time_seconds), dt_util.UTC
                 )
                 self.last_start_time = last_start_time
+
+            _LOGGER.debug(
+                "Processed data for resource '%s': %s",
+                resource,
+                sensor_metrics[resource],
+            )
 
         if len(sensor_metrics) == 0:
             raise ValueError("No metrics found")
