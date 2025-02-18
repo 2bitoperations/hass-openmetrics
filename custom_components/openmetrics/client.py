@@ -1,17 +1,14 @@
 """Class for interacting with OpenMetrics."""
 
-import logging
+from datetime import timedelta
 from http import HTTPStatus
 
 import aiohttp
 from homeassistant.exceptions import HomeAssistantError
 
-from .lib import parser, prom_parser
-from .lib.metrics_core import Metric
+from .const import CONTENT_TYPE_OPENMETRICS
 from .metrics.data import MetadataData
-from .metrics.processor import MetricsProcessor, ProcessingError
-
-_LOGGER = logging.getLogger(__name__)
+from .metrics.processor import OpenMetricsProcessor
 
 
 class RequestError(HomeAssistantError):
@@ -41,7 +38,7 @@ class OpenMetricsClient:
         self.verify_ssl = verify_ssl
         self.username = username
         self.password = password
-        self.processor = MetricsProcessor()
+        self.processor = OpenMetricsProcessor()
 
     async def _make_request(
         self,
@@ -59,50 +56,42 @@ class OpenMetricsClient:
     async def _async_request_data(self) -> tuple[str, str | None]:
         """Request data from metrics provider."""
         async with aiohttp.ClientSession() as session:
-            headers = {"Accept": "application/openmetrics-text;charset=utf-8"}
+            # Define request headers
+            headers = {"Accept": f"{CONTENT_TYPE_OPENMETRICS};charset=utf-8"}
             if self.username and self.password:
                 auth = aiohttp.BasicAuth(self.username, self.password)
                 headers["Authorization"] = auth.encode()
-
+            # Make request
             try:
                 response = await self._make_request(session, "GET", self.url, headers)
             except aiohttp.ClientConnectionError as e:
                 raise CannotConnectError(str(e)) from e
             except aiohttp.ClientError as e:
                 raise RequestError(str(e)) from e
-
+            # Process response
             if response.status == HTTPStatus.OK.value:
+                # Return response text and content type
                 return (await response.text(), response.headers.get("Content-Type"))
             if response.status == HTTPStatus.UNAUTHORIZED.value:
                 raise InvalidAuthError(f"Invalid auth for {self.url}")
-
             raise RequestError(
                 f"Request failed with status code '{response.status}' and reason '{response.reason}'"
             )
 
-    def _parse_data(self, response_text: str, content_type: str | None) -> list[Metric]:
-        """Parse metrics provider data."""
-        try:
-            if content_type and "text/plain" in content_type:
-                families = prom_parser.text_string_to_metric_families(response_text)
-            elif content_type and "application/openmetrics-text" in content_type:
-                families = parser.text_string_to_metric_families(response_text)
-            else:
-                raise ProcessingError(f"Content type '{content_type}' not supported")
-        except Exception as e:
-            raise ProcessingError(str(e)) from e
-
-        _LOGGER.debug("Metrics successfully parsed")
-        return list(families)
-
     async def get_metadata(self) -> MetadataData:
         """Get metadata from a metrics provider."""
         response_text, content_type = await self._async_request_data()
-        families = self._parse_data(response_text, content_type)
+        families = self.processor.parse_data(response_text, content_type)
         return self.processor.extract_metadata(families)
 
     async def get_metrics(self, resources: list[str]) -> dict:
         """Get metrics from a metrics provider."""
         response_text, content_type = await self._async_request_data()
-        families = self._parse_data(response_text, content_type)
+        families = self.processor.parse_data(response_text, content_type)
         return self.processor.extract_metrics(families, resources)
+
+    def process_metrics(self, metrics: dict, update_interval: timedelta | None) -> dict:
+        """Process metrics."""
+        if update_interval is None or update_interval.seconds <= 0:
+            raise ValueError("Update interval must be positive")
+        return self.processor.process_metrics(metrics, update_interval.seconds)

@@ -48,26 +48,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Create domain data if it does not exist
         if DOMAIN not in hass.data:
             hass.data[DOMAIN] = {}
-        # Filter metadata of configured resources
-        resources = []
-        coordinators = {}
-        for resource in metadata.resources:
-            if resource.name and resource.name in entry.data[CONF_RESOURCES]:
-                resources.append(resource)
-                coordinator = OpenMetricsDataUpdateCoordinator(
-                    hass,
-                    client=client,
-                    resources=[resource.name],
-                    update_interval=int(entry.data[CONF_SCAN_INTERVAL]),
-                )
-                coordinators[resource.name] = coordinator
+        # Create the coordinator and add configured resources
+        coordinator = OpenMetricsDataUpdateCoordinator(
+            hass,
+            client=client,
+            resources={
+                resource.name: resource
+                for resource in metadata.resources
+                if resource.name and resource.name in entry.data[CONF_RESOURCES]
+            },
+            update_interval=int(entry.data[CONF_SCAN_INTERVAL]),
+        )
         # Get the host name from the URL
         host = urllib.parse.urlparse(url).netloc
         # Store required entry data in hass domain entry object
         hass.data[DOMAIN][entry.entry_id] = {
             "client": client,
-            "resources": resources,
-            "coordinators": coordinators,
+            "coordinator": coordinator,
             "host": host,
         }
         # Forward the setup to your platforms, passing the coordinator to them
@@ -94,6 +91,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.exception("Unexpected exception")
         return False
     else:
+        # Initial sensor data refresh
+        await coordinator.async_refresh()
         return True
 
 

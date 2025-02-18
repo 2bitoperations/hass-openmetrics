@@ -140,10 +140,10 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up OpenMetrics sensors based on a config entry."""
-    resources: list[ResourceInfoData] = hass.data[DOMAIN][entry.entry_id]["resources"]
-    coordinators = hass.data[DOMAIN][entry.entry_id]["coordinators"]
-    for resource in resources:
-        coordinator = coordinators[resource.name]
+    # Get coordinator
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    for resource in coordinator.resources.values():
+        # Create sensors for each resource
         sensors = create_resource_sensors(hass, entry, resource, coordinator)
         # Add sensors to hass
         async_add_entities(sensors)
@@ -173,7 +173,6 @@ def create_sensor(resource: ResourceInfoData, coordinator, description, host):
     device_info = DeviceInfo(
         name=resource.name,
         model=resource.software,
-        # manufacturer=resource.get("vendor"),
         sw_version=resource.version,
         identifiers={(DOMAIN, unique_id)},
         entry_type=entry_type,
@@ -214,12 +213,12 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> StateType:
         """Return the state of the sensor."""
-        if self.coordinator.data is None:
+        if not self.coordinator.data:
             return None
-        value = self.coordinator.data.get(self.entity_description.key)
-        if value is None:
+        resource = self.device_info.get("name")
+        if not resource:
             return None
-        return value
+        return self.coordinator.data.get(resource, {}).get(self.entity_description.key)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

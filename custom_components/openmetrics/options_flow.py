@@ -270,10 +270,12 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
         """Update the scan interval if it has changed."""
         current_scan_interval = int(self.config_entry.data[CONF_SCAN_INTERVAL])
         if new_scan_interval != current_scan_interval:
-            for coordinator in self.hass.data[DOMAIN][self.config_entry.entry_id][
-                "coordinators"
-            ].values():
-                coordinator.update_interval = timedelta(seconds=new_scan_interval)
+            # Get coordinator
+            coordinator: OpenMetricsDataUpdateCoordinator = self.hass.data[DOMAIN][
+                self.config_entry.entry_id
+            ]["coordinator"]
+            # Update the update interval
+            coordinator.update_interval = timedelta(seconds=new_scan_interval)
             _LOGGER.info("Updated update interval to %s seconds", new_scan_interval)
 
     def _create_client(self, data: dict[str, Any]) -> OpenMetricsClient:
@@ -294,20 +296,16 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
                 config_entry == self.config_entry.entry_id
                 and device.name == resource_name
             ):
-                # Remove coordinator
-                if (
-                    resource_name
-                    in self.hass.data[DOMAIN][self.config_entry.entry_id][
-                        "coordinators"
-                    ]
-                ):
-                    self.hass.data[DOMAIN][self.config_entry.entry_id][
-                        "coordinators"
-                    ].pop(device.name)
+                # Get coordinator
+                coordinator: OpenMetricsDataUpdateCoordinator = self.hass.data[DOMAIN][
+                    self.config_entry.entry_id
+                ]["coordinator"]
+                # Remove resource from coordinator
+                resources = list(coordinator.resources.keys())
+                if resource_name in resources:
+                    coordinator.resources.pop(resource_name)
                 else:
-                    _LOGGER.debug(
-                        "Coordinator for resource %s not found", resource_name
-                    )
+                    _LOGGER.debug("Resource %s not found in coordinator", resource_name)
                 # Remove device including its entities
                 device_registry.async_remove_device(device.id)
                 _LOGGER.debug(
@@ -319,15 +317,15 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
     async def _async_add_resource_to_hass(self, resource_name: str) -> bool:
         """Add a resource to Home Assistant."""
         device_registry = self.hass.data[dr.DATA_REGISTRY]
+        # Get coordinator
+        coordinator: OpenMetricsDataUpdateCoordinator = self.hass.data[DOMAIN][
+            self.config_entry.entry_id
+        ]["coordinator"]
+        # Add new resource
         for resource in self.metadata.resources:
             if resource.name == resource_name:
-                # Create coordinator
-                coordinator = OpenMetricsDataUpdateCoordinator(
-                    self.hass,
-                    client=self.client,
-                    resources=[resource_name],
-                    update_interval=int(self.config_entry.data[CONF_SCAN_INTERVAL]),
-                )
+                if resource_name not in coordinator.resources:
+                    coordinator.resources[resource_name] = resource
                 # Create sensors
                 sensors = create_resource_sensors(
                     self.hass,
@@ -340,24 +338,16 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
                     config_entry_id=self.config_entry.entry_id,
                     name=sensors[0].device_info["name"],
                     model=sensors[0].device_info["model"],
-                    manufacturer=sensors[0].device_info["manufacturer"],
-                    sw_version=sensors[0].device_info["sw_version"],
                     identifiers=sensors[0].device_info["identifiers"],
                     entry_type=sensors[0].device_info["entry_type"],
+                    manufacturer=sensors[0].device_info.get("manufacturer"),
+                    sw_version=sensors[0].device_info.get("sw_version"),
                 )
                 # Link sensors to device
                 for sensor in sensors:
                     sensor.device_entry = device_entry
                 # Add sensors to hass
                 await self.sensor_platform.async_add_entities(sensors)
-                # Add coordinator to config entry
-                self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinators"][
-                    resource.name
-                ] = coordinator
-                # Add resource to config entry
-                self.hass.data[DOMAIN][self.config_entry.entry_id]["resources"].append(
-                    resource
-                )
                 return True
         return False
 
@@ -367,14 +357,13 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
         """Add an entity to a device."""
         sensors = []
         host = self.hass.data[DOMAIN][self.config_entry.entry_id]["host"]
-        resources = self.hass.data[DOMAIN][self.config_entry.entry_id]["resources"]
-        coordinators = self.hass.data[DOMAIN][self.config_entry.entry_id][
-            "coordinators"
-        ]
+        # Get coordinator
+        coordinator: OpenMetricsDataUpdateCoordinator = self.hass.data[DOMAIN][
+            self.config_entry.entry_id
+        ]["coordinator"]
         # Create sensors
-        for resource in resources:
-            if resource["name"] == device_entry.name:
-                coordinator = coordinators[resource["name"]]
+        for resource in coordinator.resources.values():
+            if resource.name == device_entry.name:
                 for key, description in SENSORS.items():
                     if key == metric_key:
                         sensor = create_sensor(resource, coordinator, description, host)

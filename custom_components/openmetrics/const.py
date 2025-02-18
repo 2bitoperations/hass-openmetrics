@@ -5,9 +5,13 @@ DOMAIN = "openmetrics"
 CONF_RESOURCES = "resources"
 CONF_METRICS = "metrics"
 
-PROVIDER_NAME_NODE_EXPORTER = "Node exporter"
+CONTENT_TYPE_OPENMETRICS = "application/openmetrics-text"
+CONTENT_TYPE_TEXT = "text/plain"
+
+PROVIDER_NAME_NODE_EXPORTER = "Node Exporter"
 PROVIDER_NAME_CADVISOR = "cAdvisor"
 PROVIDER_TYPE_NODE = "node"
+PROVIDER_TYPE_NODE_VIRTUAL = "virtual_node"
 PROVIDER_TYPE_CONTAINER = "container"
 
 RESOURCE_TYPE_NODE = PROVIDER_TYPE_NODE
@@ -30,7 +34,10 @@ PROPERTY_CPU_CORES = "cpu_cores"
 PROPERTY_MEMORY_SIZE = "memory_size"
 PROPERTY_DISK_SIZE = "disk_size"
 
+# Node Exporter metrics
 NODE_EXPORTER_BUILD_INFO = "node_exporter_build_info"
+NODE_EXPORTER_VERSION_LABEL = "version"
+NODE_EXPORTER_RESOURCE_LABEL = "nodename"
 NODE_UNAME_INFO = "node_uname_info"
 NODE_OS_INFO = "node_os_info"
 NODE_TIME = "node_time_seconds"
@@ -46,7 +53,10 @@ NODE_FILESYSTEM_FREE = "node_filesystem_free_bytes"
 NODE_NETWORK_RECEIVE = "node_network_receive_bytes"
 NODE_NETWORK_TRANSMIT = "node_network_transmit_bytes"
 
+# cAdvisor metrics
 CADVISOR_VERSION_INFO = "cadvisor_version_info"
+CADVISOR_VERSION_LABEL = "cadvisorVersion"
+CADVISOR_RESOURCE_LABEL = "name"
 MACHINE_CPU_CORES = "machine_cpu_cores"
 MACHINE_MEMORY = "machine_memory_bytes"
 MACHINE_SWAP = "machine_swap_bytes"

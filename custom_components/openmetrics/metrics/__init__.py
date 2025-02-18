@@ -1,6 +1,6 @@
 """Metrics."""
 
 from .filter import MetricFilter
-from .processor import MetricsProcessor
+from .processor import OpenMetricsProcessor
 
-__all__ = ["MetricFilter", "MetricsProcessor"]
+__all__ = ["MetricFilter", "OpenMetricsProcessor"]
