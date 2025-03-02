@@ -36,7 +36,7 @@ from .const import (
 from .coordinator import OpenMetricsDataUpdateCoordinator
 from .metrics.data import MetadataData
 from .metrics.processor import MetricsError, ResourcesError
-from .sensor import SENSORS, create_resource_sensors, create_sensor
+from .sensor import VIRTUAL_SENSORS, create_resource_sensors
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +53,11 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
 
     def _get_available_resources(self) -> list[str]:
         """Get available resources from the metadata."""
-        return [resource.name for resource in self.metadata.resources if resource.name]
+        return [
+            resource.name
+            for resource in self.metadata.resources.values()
+            if resource.name and not resource.is_virtual
+        ]
 
     def _get_platform(self, type: str) -> EntityPlatform:
         platforms = self.hass.data["entity_platform"][DOMAIN]
@@ -317,21 +321,22 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
     async def _async_add_resource_to_hass(self, resource_name: str) -> bool:
         """Add a resource to Home Assistant."""
         device_registry = self.hass.data[dr.DATA_REGISTRY]
-        # Get coordinator
+        # Get objeects for the sensors of the new resource
         coordinator: OpenMetricsDataUpdateCoordinator = self.hass.data[DOMAIN][
             self.config_entry.entry_id
         ]["coordinator"]
+        host = self.hass.data[DOMAIN][self.config_entry.entry_id]["host"]
         # Add new resource
-        for resource in self.metadata.resources:
+        for resource in self.metadata.resources.values():
             if resource.name == resource_name:
                 if resource_name not in coordinator.resources:
                     coordinator.resources[resource_name] = resource
                 # Create sensors
                 sensors = create_resource_sensors(
-                    self.hass,
-                    self.config_entry,
                     resource,
+                    host,
                     coordinator,
+                    self.config_entry.data[CONF_METRICS],
                 )
                 # Register device
                 device_entry = device_registry.async_get_or_create(
@@ -356,24 +361,21 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
     ) -> bool:
         """Add an entity to a device."""
         sensors = []
-        host = self.hass.data[DOMAIN][self.config_entry.entry_id]["host"]
-        # Get coordinator
+        # Get objects for sensors
         coordinator: OpenMetricsDataUpdateCoordinator = self.hass.data[DOMAIN][
             self.config_entry.entry_id
         ]["coordinator"]
+        host = self.hass.data[DOMAIN][self.config_entry.entry_id]["host"]
         # Create sensors
         for resource in coordinator.resources.values():
-            if resource.name == device_entry.name:
-                for key, description in SENSORS.items():
-                    if key == metric_key:
-                        sensor = create_sensor(resource, coordinator, description, host)
-                        sensor.device_entry = device_entry
-                        sensors.append(sensor)
+            if resource.name == device_entry.name or (
+                resource.via_resource == device_entry.name
+                and metric_key in VIRTUAL_SENSORS
+            ):
+                sensors.extend(
+                    create_resource_sensors(resource, host, coordinator, [metric_key])
+                )
         if len(sensors) == 0:
-            _LOGGER.error(
-                "No sensors found for config entry %s",
-                self.config_entry.entry_id,
-            )
             return False
         # Add sensors to hass
         await self.sensor_platform.async_add_entities(sensors)
@@ -383,17 +385,30 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
         self, device: DeviceEntry, metric_key: str
     ) -> bool:
         """Remove an entity from a device."""
+        removed = False
         entity_registry = self.hass.data[er.DATA_REGISTRY]
-        for entity_entry in entity_registry.entities.data.values():
+        # Create a list of relevant entities
+        relevant_entities = [
+            entity_entry
+            for entity_entry in entity_registry.entities.data.values()
             if (
                 entity_entry.config_entry_id == self.config_entry.entry_id
                 and entity_entry.device_id == device.id
-                and entity_entry.translation_key == metric_key
-            ):
+            )
+        ]
+        # Iterate over relevant entities
+        for entity_entry in relevant_entities:
+            if entity_entry.translation_key == metric_key:
                 # Remove entity
                 entity_registry.async_remove(entity_entry.entity_id)
-                return True
-        return False
+                removed = True
+                break
+        # Remove virtual device if no entities left
+        if len(relevant_entities) == 1 and removed and device.via_device_id:
+            device_registry = self.hass.data[dr.DATA_REGISTRY]
+            device_registry.async_remove_device(device.id)
+        # Return if entity was removed
+        return removed
 
     async def _async_enable_metric_of_device(
         self, device: DeviceEntry, metric_key: str

@@ -53,11 +53,11 @@ class MetricsProvider(ABC):
                 type=resource_type,
                 version=None,
             ),
-            resources=[],
+            resources={},
             available_metrics=[],
         )
+        self.resource_name: str | None = None
         # Initialize metrics
-        self._metrics: dict = {}
         self._previous_metrics: dict = {}
         # Initialize resource meta info
         self.last_start_time: datetime | None = None
@@ -69,34 +69,44 @@ class MetricsProvider(ABC):
         """Return collected metadata."""
         return self._metadata
 
-    def get_metrics(self) -> dict:
-        """Return collected metrics."""
-        return self._metrics
-
     @abstractmethod
     def get_config(self) -> ProviderConfig:
         """Return provider configuration."""
         raise NotImplementedError
 
     @abstractmethod
-    def extract_provider_info(self, family: Metric) -> dict | None:
+    def extract_provider_info(self, family: Metric, metadata: MetadataData):
         """Extract provider information from metric family."""
         raise NotImplementedError
 
     @abstractmethod
-    def extract_resource_info(self, family: Metric) -> dict | None:
+    def extract_resource_info(self, family: Metric, metadata: MetadataData):
         """Extract resource information from metric family."""
         raise NotImplementedError
 
     @abstractmethod
-    def extract_available_metrics(self, family: Metric) -> list[str] | None:
+    def extract_available_metrics(self, family: Metric, metadata: MetadataData):
         """Extract available metrics from metric family."""
         raise NotImplementedError
 
-    def process_metrics(
+    def process_metrics(self, metrics: dict, update_interval: int) -> dict | None:
+        """Process metrics and return sensor metrics."""
+        sensor_metrics = {}
+        for resource, resource_metrics in metrics.items():
+            if resource not in sensor_metrics:
+                sensor_metrics[resource] = {}
+            sensor_metrics[resource].update(
+                self._process_resource_metrics(
+                    resource, resource_metrics, update_interval
+                )
+            )
+        # Return sensor metrics
+        return sensor_metrics
+
+    def _process_resource_metrics(
         self, resource: str, metrics: dict, update_interval: int
     ) -> dict | None:
-        """Process metrics and return sensor metrics."""
+        """Process resource metrics and return sensor metrics."""
         sensor_metrics = {}
         # CPU
         cpu_usage_pct, cpu_core_usage_pct = self._calculate_cpu_usage(
@@ -163,13 +173,6 @@ class MetricsProvider(ABC):
         """Calculate uptime."""
         raise NotImplementedError
 
-    def add_metric_value(
-        self,
-        resource_id: str,
-        metric_key: str,
-        sample: Sample,
-    ):
-        """Add metric value to metrics data."""
-        if resource_id not in self._metrics:
-            self._metrics[resource_id] = {}
-        self._metrics[resource_id][metric_key] = sample.value
+    def prepare_metric_value(self, metric_key: str, sample: Sample) -> float | dict:
+        """Collect metric values."""
+        return sample.value

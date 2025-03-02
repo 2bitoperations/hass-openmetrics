@@ -2,11 +2,6 @@
 
 from time import time
 
-from custom_components.openmetrics.lib.samples import Sample
-from custom_components.openmetrics.metrics.data import (
-    ResourceInfoData,
-)
-
 from ..const import (
     METRIC_CPU_TEMP,
     METRIC_CPU_USAGE_PCT,
@@ -18,6 +13,7 @@ from ..const import (
     METRIC_NETWORK_TRANSMIT_BYTES,
     METRIC_UPTIME_SECONDS,
     NODE_BOOT_TIME,
+    NODE_CONTAINER_RESOURCE_LABEL,
     NODE_CPU_IDLE_SECONDS,
     NODE_CPU_TEMP,
     NODE_EXPORTER_BUILD_INFO,
@@ -34,146 +30,220 @@ from ..const import (
     NODE_TIME,
     NODE_UNAME_INFO,
     PROVIDER_NAME_NODE_EXPORTER,
+    RESOURCE_TYPE_CONTAINER,
     RESOURCE_TYPE_NODE,
 )
 from ..lib.metrics_core import Metric
+from ..lib.samples import Sample
 from ..metrics import MetricFilter
+from ..metrics.data import (
+    MetadataData,
+    ResourceInfoData,
+)
 from .base import MetricsProvider, ProviderConfig
 
 
 class NodeExporterProvider(MetricsProvider):
     """Node Exporter metrics provider."""
 
+    CONFIG = ProviderConfig(
+        identifier_metric=NODE_EXPORTER_BUILD_INFO,
+        version_label=NODE_EXPORTER_VERSION_LABEL,
+        resource_identifier=NODE_EXPORTER_RESOURCE_LABEL,
+        metric_filters=[
+            MetricFilter(metric_name=METRIC_UPTIME_SECONDS, metric_key=NODE_TIME),
+            MetricFilter(metric_name=METRIC_UPTIME_SECONDS, metric_key=NODE_BOOT_TIME),
+            MetricFilter(
+                metric_name=METRIC_CPU_TEMP,
+                metric_key=NODE_CPU_TEMP,
+                label_filters={"type": "cpu-thermal"},
+            ),
+            MetricFilter(
+                metric_name=METRIC_CPU_USAGE_PCT,
+                metric_key=NODE_CPU_IDLE_SECONDS,
+                label_filters={"mode": "idle"},
+            ),
+            MetricFilter(
+                metric_name=METRIC_MEMORY_USAGE_BYTES,
+                metric_key=NODE_MEMORY_FREE,
+            ),
+            MetricFilter(
+                metric_name=METRIC_MEMORY_USAGE_BYTES,
+                metric_key=NODE_MEMORY_TOTAL,
+            ),
+            MetricFilter(
+                metric_name=METRIC_MEMORY_USAGE_BYTES,
+                metric_key=NODE_MEMORY_SWAP_TOTAL,
+            ),
+            MetricFilter(
+                metric_name=METRIC_MEMORY_USAGE_PCT, metric_key=NODE_MEMORY_FREE
+            ),
+            MetricFilter(
+                metric_name=METRIC_MEMORY_USAGE_PCT,
+                metric_key=NODE_MEMORY_TOTAL,
+            ),
+            MetricFilter(
+                metric_name=METRIC_MEMORY_USAGE_PCT,
+                metric_key=NODE_MEMORY_SWAP_TOTAL,
+            ),
+            MetricFilter(
+                metric_name=METRIC_DISK_USAGE_BYTES,
+                metric_key=NODE_FILESYSTEM_SIZE,
+                label_filters={"mountpoint": "/"},
+            ),
+            MetricFilter(
+                metric_name=METRIC_DISK_USAGE_BYTES,
+                metric_key=NODE_FILESYSTEM_FREE,
+                label_filters={"mountpoint": "/"},
+            ),
+            MetricFilter(
+                metric_name=METRIC_DISK_USAGE_PCT,
+                metric_key=NODE_FILESYSTEM_SIZE,
+                label_filters={"mountpoint": "/"},
+            ),
+            MetricFilter(
+                metric_name=METRIC_DISK_USAGE_PCT,
+                metric_key=NODE_FILESYSTEM_FREE,
+                label_filters={"mountpoint": "/"},
+            ),
+            MetricFilter(
+                metric_name=METRIC_NETWORK_RECEIVE_BYTES,
+                metric_key=NODE_NETWORK_RECEIVE,
+                label_filters={"device": "eth0"},
+            ),
+            MetricFilter(
+                metric_name=METRIC_NETWORK_TRANSMIT_BYTES,
+                metric_key=NODE_NETWORK_TRANSMIT,
+                label_filters={"device": "eth0"},
+            ),
+        ],
+    )
+
     def __init__(self):
         """Initialize node exporter provider."""
         super().__init__(PROVIDER_NAME_NODE_EXPORTER, RESOURCE_TYPE_NODE)
-        self.resource_info = ResourceInfoData(
-            type=RESOURCE_TYPE_NODE, name=None, software=None, version=None
-        )
-        self._metadata.resources.append(self.resource_info)
+        self.__process_virtual_resource_metric_filters()
+
+    def __process_virtual_resource_metric_filters(self):
+        # Extract virtual resource keys and names
+        virtual_resource_metric_keys = []
+        virtual_resource_metric_names = []
+        for metric_filter in self.CONFIG.metric_filters:
+            if metric_filter.resource_label is not None:
+                if metric_filter.metric_key not in virtual_resource_metric_keys:
+                    virtual_resource_metric_keys.append(metric_filter.metric_key)
+                if metric_filter.metric_name not in virtual_resource_metric_names:
+                    virtual_resource_metric_names.append(metric_filter.metric_name)
+        self.__virtual_resource_metric_keys = virtual_resource_metric_keys
+        self.__virtual_resource_metric_names = virtual_resource_metric_names
 
     def get_config(self) -> ProviderConfig:
         """Return provider configuration."""
-        return ProviderConfig(
-            identifier_metric=NODE_EXPORTER_BUILD_INFO,
-            version_label=NODE_EXPORTER_VERSION_LABEL,
-            resource_identifier=NODE_EXPORTER_RESOURCE_LABEL,
-            metric_filters=[
-                MetricFilter(metric_name=METRIC_UPTIME_SECONDS, metric_key=NODE_TIME),
-                MetricFilter(
-                    metric_name=METRIC_UPTIME_SECONDS, metric_key=NODE_BOOT_TIME
-                ),
-                MetricFilter(
-                    metric_name=METRIC_CPU_TEMP,
-                    metric_key=NODE_CPU_TEMP,
-                    label_filters={"type": "cpu-thermal"},
-                ),
-                MetricFilter(
-                    metric_name=METRIC_CPU_USAGE_PCT,
-                    metric_key=NODE_CPU_IDLE_SECONDS,
-                    label_filters={"mode": "idle"},
-                ),
-                MetricFilter(
-                    metric_name=METRIC_MEMORY_USAGE_BYTES,
-                    metric_key=NODE_MEMORY_FREE,
-                ),
-                MetricFilter(
-                    metric_name=METRIC_MEMORY_USAGE_BYTES,
-                    metric_key=NODE_MEMORY_TOTAL,
-                ),
-                MetricFilter(
-                    metric_name=METRIC_MEMORY_USAGE_BYTES,
-                    metric_key=NODE_MEMORY_SWAP_TOTAL,
-                ),
-                MetricFilter(
-                    metric_name=METRIC_MEMORY_USAGE_PCT, metric_key=NODE_MEMORY_FREE
-                ),
-                MetricFilter(
-                    metric_name=METRIC_MEMORY_USAGE_PCT,
-                    metric_key=NODE_MEMORY_TOTAL,
-                ),
-                MetricFilter(
-                    metric_name=METRIC_MEMORY_USAGE_PCT,
-                    metric_key=NODE_MEMORY_SWAP_TOTAL,
-                ),
-                MetricFilter(
-                    metric_name=METRIC_DISK_USAGE_BYTES,
-                    metric_key=NODE_FILESYSTEM_SIZE,
-                    label_filters={"mountpoint": "/"},
-                ),
-                MetricFilter(
-                    metric_name=METRIC_DISK_USAGE_BYTES,
-                    metric_key=NODE_FILESYSTEM_FREE,
-                    label_filters={"mountpoint": "/"},
-                ),
-                MetricFilter(
-                    metric_name=METRIC_DISK_USAGE_PCT,
-                    metric_key=NODE_FILESYSTEM_SIZE,
-                    label_filters={"mountpoint": "/"},
-                ),
-                MetricFilter(
-                    metric_name=METRIC_DISK_USAGE_PCT,
-                    metric_key=NODE_FILESYSTEM_FREE,
-                    label_filters={"mountpoint": "/"},
-                ),
-                MetricFilter(
-                    metric_name=METRIC_NETWORK_RECEIVE_BYTES,
-                    metric_key=NODE_NETWORK_RECEIVE,
-                    label_filters={"device": "eth0"},
-                ),
-                MetricFilter(
-                    metric_name=METRIC_NETWORK_TRANSMIT_BYTES,
-                    metric_key=NODE_NETWORK_TRANSMIT,
-                    label_filters={"device": "eth0"},
-                ),
-            ],
-        )
+        return self.CONFIG
 
-    def extract_provider_info(self, family: Metric) -> None:
+    def extract_provider_info(self, family: Metric, metadata: MetadataData):
         """Extract and store provider information."""
         if family.name == self.get_config().identifier_metric and family.samples:
-            self._metadata.provider_info.version = family.samples[0].labels[
+            metadata.provider_info.version = family.samples[0].labels[
                 self.get_config().version_label
             ]
 
-    def extract_resource_info(self, family: Metric) -> None:
+    def extract_resource_info(self, family: Metric, metadata: MetadataData):
         """Extract and store node resource information."""
+        # Initialize resource info if not yet initialized
+        if self.name not in metadata.resources:
+            resource_info = ResourceInfoData(type=RESOURCE_TYPE_NODE)
+            metadata.resources[self.name] = resource_info
+        else:
+            resource_info = metadata.resources[self.name]
+        # Extract resource info
         if family.name == NODE_UNAME_INFO:
             for sample in family.samples:
                 nodename = sample.labels.get("nodename", None)
                 if nodename:
-                    self.resource_info.name = nodename
+                    resource_info.name = nodename
+                    self.resource_name = nodename
         elif family.name == NODE_OS_INFO:
             for sample in family.samples:
-                self.resource_info.software = sample.labels.get("pretty_name", "")
-                self.resource_info.version = sample.labels.get("version", "")
+                resource_info.software = sample.labels.get("pretty_name", "")
+                resource_info.version = sample.labels.get("version", "")
+        elif family.name in self.__virtual_resource_metric_keys:
+            for sample in family.samples:
+                v_resource_name = sample.labels.get(NODE_CONTAINER_RESOURCE_LABEL)
+                if v_resource_name and v_resource_name not in metadata.resources:
+                    v_resource_info = ResourceInfoData(
+                        type=RESOURCE_TYPE_CONTAINER,
+                        name=v_resource_name,
+                        software=sample.labels.get("image"),
+                        is_virtual=True,
+                    )
+                    metadata.resources[v_resource_name] = v_resource_info
 
-    def extract_available_metrics(self, family: Metric) -> None:
+    def extract_available_metrics(self, family: Metric, metadata: MetadataData):
         """Extract and store available metrics."""
         for metric_filter in self.get_config().metric_filters:
-            if (
-                family.name == metric_filter.metric_key
-                and metric_filter.metric_name not in self._metadata.available_metrics
-            ):
-                self._metadata.available_metrics.append(metric_filter.metric_name)
+            # Check if metric is available
+            if family.name == metric_filter.metric_key:
+                metric = metric_filter.metric_name
+                # Add metric to available metrics if not already present
+                if metric not in metadata.available_metrics:
+                    metadata.available_metrics.append(metric)
+                    if metric == METRIC_MEMORY_USAGE_BYTES:
+                        metadata.available_metrics.append(METRIC_MEMORY_USAGE_PCT)
+                    if metric == METRIC_DISK_USAGE_BYTES:
+                        metadata.available_metrics.append(METRIC_DISK_USAGE_PCT)
+                break
 
-    def add_metric_value(
-        self,
-        resource_id: str,
-        metric_key: str,
-        sample: Sample,
-    ):
-        """Add metric value to metrics data."""
-        if resource_id not in self._metrics:
-            self._metrics[resource_id] = {}
-
+    def prepare_metric_value(self, metric_key: str, sample: Sample) -> float | dict:
+        """Override: Collect metric value."""
         if metric_key == NODE_CPU_IDLE_SECONDS:
             cpu = sample.labels["cpu"]
-            if metric_key not in self._metrics[resource_id]:
-                self._metrics[resource_id][metric_key] = {}
-            self._metrics[resource_id][metric_key][cpu] = sample.value
+            return {cpu: sample.value}
+        return sample.value
+
+    def process_metrics(self, metrics: dict, update_interval: int) -> dict | None:
+        """Process metrics and return sensor metrics."""
+        sensor_metrics = {}
+        for resource, resource_metrics in metrics.items():
+            # Create resource sensor metrics if not existing
+            if resource not in sensor_metrics:
+                sensor_metrics[resource] = {}
+            # Process resource metrics
+            res_metrics = self._process_resource_metrics(
+                resource, resource_metrics, update_interval
+            )
+            if res_metrics:
+                sensor_metrics[resource].update(res_metrics)
+            # Process virtual resource metrics
+            v_res_metrics = self._process_virtual_resource_metrics(
+                resource, resource_metrics
+            )
+            if v_res_metrics:
+                sensor_metrics[resource].update(v_res_metrics)
+        # Return sensor metrics
+        return sensor_metrics
+
+    def _process_resource_metrics(
+        self, resource: str, metrics: dict, update_interval: int
+    ) -> dict | None:
+        """Process resource metrics and return sensor metrics."""
+        if resource == self.resource_name:
+            sensor_metrics = super()._process_resource_metrics(
+                resource, metrics, update_interval
+            )
+            # CPU temperature
+            if NODE_CPU_TEMP in metrics and sensor_metrics:
+                sensor_metrics[METRIC_CPU_TEMP] = metrics[NODE_CPU_TEMP]
         else:
-            self._metrics[resource_id][metric_key] = sample.value
+            sensor_metrics = None
+        # Return sensor metrics
+        return sensor_metrics
+
+    def _process_virtual_resource_metrics(
+        self, resource: str, metrics: dict
+    ) -> dict | None:
+        """Process virtual resource metrics and return sensor metrics."""
+        return {}
 
     def _calculate_cpu_usage(
         self, resource: str, metrics: dict, update_interval: int
@@ -294,7 +364,9 @@ class NodeExporterProvider(MetricsProvider):
         if NODE_FILESYSTEM_SIZE in metrics:
             self.disk_size: int = metrics[NODE_FILESYSTEM_SIZE]
 
-    def _calculate_network_io(self, resource: str, metrics: dict, update_interval: int):
+    def _calculate_network_io(
+        self, resource: str, metrics: dict, update_interval: int
+    ) -> tuple[int | None, int | None]:
         """Calculate network IO."""
         # Check if metrics are available
         if not metrics:
@@ -367,6 +439,33 @@ class NodeExporterProvider(MetricsProvider):
         # Get values
         if NODE_BOOT_TIME in metrics:
             start_time = metrics[NODE_BOOT_TIME]
+        # Calculate uptime
+        if start_time is not None:
+            uptime_seconds = int(time()) - start_time
+        # Return values
+        return uptime_seconds, start_time
+
+    def _calculate_container_status(
+        self, resource: str, container_states: dict
+    ) -> str | None:
+        """Get container state as string from state values."""
+        # Check if metrics are available
+        if not container_states:
+            return None
+        for status, value in container_states.items():
+            if value == 1.0:
+                return status
+        return "unknown"
+
+    def _calculate_container_uptime(
+        self, resource: str, start_time: int
+    ) -> tuple[int | None, int | None]:
+        """Calculate uptime."""
+        # Check if metrics are available
+        if not start_time:
+            return None, None
+        # Initialize variables
+        uptime_seconds = None
         # Calculate uptime
         if start_time is not None:
             uptime_seconds = int(time()) - start_time

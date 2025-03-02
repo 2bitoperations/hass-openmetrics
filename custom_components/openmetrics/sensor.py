@@ -125,6 +125,7 @@ SENSORS = {
         translation_key=METRIC_UPTIME_SECONDS,
     ),
 }
+VIRTUAL_SENSORS = {}
 
 
 def get_coordinator_class():
@@ -142,42 +143,62 @@ async def async_setup_entry(
     """Set up OpenMetrics sensors based on a config entry."""
     # Get coordinator
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    host = hass.data[DOMAIN][entry.entry_id]["host"]
+    metric_keys = entry.data["metrics"]
+    # Create sensors
     for resource in coordinator.resources.values():
         # Create sensors for each resource
-        sensors = create_resource_sensors(hass, entry, resource, coordinator)
+        sensors = create_resource_sensors(resource, host, coordinator, metric_keys)
         # Add sensors to hass
         async_add_entities(sensors)
 
 
 def create_resource_sensors(
-    hass: HomeAssistant, entry: ConfigEntry, resource, coordinator
+    resource: ResourceInfoData,
+    host: str,
+    coordinator,
+    metric_keys: list[str],
 ) -> list[Any]:
     """Create sensor entities for the given resource."""
     sensors = []
-    host = hass.data[DOMAIN][entry.entry_id]["host"]
-    for key, description in SENSORS.items():
+    unique_id = f"{host}_{resource.name}"
+    if resource.is_virtual:
+        via_device = (DOMAIN, f"{host}_{resource.via_resource}")
+        device_info = create_device_info(unique_id, resource, via_device)
+        sensor_descriptions = VIRTUAL_SENSORS
+    else:
+        device_info = create_device_info(unique_id, resource)
+        sensor_descriptions = SENSORS
+    # Create sensors
+    for key, description in sensor_descriptions.items():
         # Check if metric is selected/enabled
-        if key in entry.data["metrics"]:
-            sensor = create_sensor(resource, coordinator, description, host)
+        if key in metric_keys:
+            sensor = OpenMetricsSensor(coordinator, description, device_info)
             sensors.append(sensor)
     return sensors
 
 
-def create_sensor(resource: ResourceInfoData, coordinator, description, host):
-    """Create a sensor for an OpenMetrics resource."""
-    unique_id = f"{host}_{resource.name}"
-    entry_type = None
-    if resource.type == RESOURCE_TYPE_CONTAINER:
-        entry_type = DeviceEntryType.SERVICE
-    # Device info object
+def create_device_info(
+    unique_id: str,
+    resource: ResourceInfoData,
+    via_device: tuple[str, str] | None = None,
+) -> DeviceInfo:
+    """Create a device info object for a resource."""
+    # Create device info object
     device_info = DeviceInfo(
         name=resource.name,
         model=resource.software,
         sw_version=resource.version,
         identifiers={(DOMAIN, unique_id)},
-        entry_type=entry_type,
     )
-    return OpenMetricsSensor(coordinator, description, device_info)
+    # Set entry type if container
+    if resource.type == RESOURCE_TYPE_CONTAINER:
+        device_info["entry_type"] = DeviceEntryType.SERVICE
+    # Set via_device if provided
+    if via_device:
+        device_info["via_device"] = via_device
+    # Return the device info object
+    return device_info
 
 
 class OpenMetricsSensor(CoordinatorEntity, SensorEntity):

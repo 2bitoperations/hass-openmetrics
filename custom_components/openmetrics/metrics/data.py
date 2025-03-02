@@ -20,6 +20,8 @@ class ResourceInfoData:
     name: str | None = None
     software: str | None = None
     version: str | None = None
+    is_virtual: bool = False
+    via_resource: str | None = None
 
 
 @dataclass
@@ -27,5 +29,5 @@ class MetadataData:
     """Metadata for metrics providers."""
 
     provider_info: ProviderInfoData
-    resources: list[ResourceInfoData]
+    resources: dict[str, ResourceInfoData]
     available_metrics: list[str]

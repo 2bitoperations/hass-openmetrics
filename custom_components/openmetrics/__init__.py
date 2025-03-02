@@ -8,7 +8,6 @@ import urllib.parse
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_PASSWORD,
-    CONF_RESOURCES,
     CONF_SCAN_INTERVAL,
     CONF_URL,
     CONF_USERNAME,
@@ -52,11 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator = OpenMetricsDataUpdateCoordinator(
             hass,
             client=client,
-            resources={
-                resource.name: resource
-                for resource in metadata.resources
-                if resource.name and resource.name in entry.data[CONF_RESOURCES]
-            },
+            resources=metadata.resources,
             update_interval=int(entry.data[CONF_SCAN_INTERVAL]),
         )
         # Get the host name from the URL

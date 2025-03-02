@@ -69,7 +69,11 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
 
     def _get_available_resources(self) -> list[str]:
         """Get available resources from the metadata."""
-        return [resource.name for resource in self.metadata.resources if resource.name]
+        return [
+            resource.name
+            for resource in self.metadata.resources.values()
+            if resource.name and not resource.is_virtual
+        ]
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
