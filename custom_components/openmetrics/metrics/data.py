@@ -20,6 +20,8 @@ class ResourceInfoData:
     name: str | None = None
     software: str | None = None
     version: str | None = None
+    model: str | None = None
+    serial_number: str | None = None
     is_virtual: bool = False
     via_resource: str | None = None
 

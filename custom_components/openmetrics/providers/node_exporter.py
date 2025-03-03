@@ -3,6 +3,17 @@
 from time import time
 
 from ..const import (
+    CONTAINER_STATE_STARTEDAT,
+    CONTAINER_STATE_STATUS,
+    METRIC_CONTAINER_STATUS,
+    METRIC_CONTAINER_STATUS_CREATED,
+    METRIC_CONTAINER_STATUS_DEAD,
+    METRIC_CONTAINER_STATUS_EXITED,
+    METRIC_CONTAINER_STATUS_PAUSED,
+    METRIC_CONTAINER_STATUS_REMOVING,
+    METRIC_CONTAINER_STATUS_RESTARTING,
+    METRIC_CONTAINER_STATUS_RUNNING,
+    METRIC_CONTAINER_UPTIME,
     METRIC_CPU_TEMP,
     METRIC_CPU_USAGE_PCT,
     METRIC_DISK_USAGE_BYTES,
@@ -16,6 +27,7 @@ from ..const import (
     NODE_CONTAINER_RESOURCE_LABEL,
     NODE_CPU_IDLE_SECONDS,
     NODE_CPU_TEMP,
+    NODE_DEVICE_INFO,
     NODE_EXPORTER_BUILD_INFO,
     NODE_EXPORTER_RESOURCE_LABEL,
     NODE_EXPORTER_VERSION_LABEL,
@@ -46,89 +58,137 @@ from .base import MetricsProvider, ProviderConfig
 class NodeExporterProvider(MetricsProvider):
     """Node Exporter metrics provider."""
 
-    CONFIG = ProviderConfig(
-        identifier_metric=NODE_EXPORTER_BUILD_INFO,
-        version_label=NODE_EXPORTER_VERSION_LABEL,
-        resource_identifier=NODE_EXPORTER_RESOURCE_LABEL,
-        metric_filters=[
-            MetricFilter(metric_name=METRIC_UPTIME_SECONDS, metric_key=NODE_TIME),
-            MetricFilter(metric_name=METRIC_UPTIME_SECONDS, metric_key=NODE_BOOT_TIME),
-            MetricFilter(
-                metric_name=METRIC_CPU_TEMP,
-                metric_key=NODE_CPU_TEMP,
-                label_filters={"type": "cpu-thermal"},
-            ),
-            MetricFilter(
-                metric_name=METRIC_CPU_USAGE_PCT,
-                metric_key=NODE_CPU_IDLE_SECONDS,
-                label_filters={"mode": "idle"},
-            ),
-            MetricFilter(
-                metric_name=METRIC_MEMORY_USAGE_BYTES,
-                metric_key=NODE_MEMORY_FREE,
-            ),
-            MetricFilter(
-                metric_name=METRIC_MEMORY_USAGE_BYTES,
-                metric_key=NODE_MEMORY_TOTAL,
-            ),
-            MetricFilter(
-                metric_name=METRIC_MEMORY_USAGE_BYTES,
-                metric_key=NODE_MEMORY_SWAP_TOTAL,
-            ),
-            MetricFilter(
-                metric_name=METRIC_MEMORY_USAGE_PCT, metric_key=NODE_MEMORY_FREE
-            ),
-            MetricFilter(
-                metric_name=METRIC_MEMORY_USAGE_PCT,
-                metric_key=NODE_MEMORY_TOTAL,
-            ),
-            MetricFilter(
-                metric_name=METRIC_MEMORY_USAGE_PCT,
-                metric_key=NODE_MEMORY_SWAP_TOTAL,
-            ),
-            MetricFilter(
-                metric_name=METRIC_DISK_USAGE_BYTES,
-                metric_key=NODE_FILESYSTEM_SIZE,
-                label_filters={"mountpoint": "/"},
-            ),
-            MetricFilter(
-                metric_name=METRIC_DISK_USAGE_BYTES,
-                metric_key=NODE_FILESYSTEM_FREE,
-                label_filters={"mountpoint": "/"},
-            ),
-            MetricFilter(
-                metric_name=METRIC_DISK_USAGE_PCT,
-                metric_key=NODE_FILESYSTEM_SIZE,
-                label_filters={"mountpoint": "/"},
-            ),
-            MetricFilter(
-                metric_name=METRIC_DISK_USAGE_PCT,
-                metric_key=NODE_FILESYSTEM_FREE,
-                label_filters={"mountpoint": "/"},
-            ),
-            MetricFilter(
-                metric_name=METRIC_NETWORK_RECEIVE_BYTES,
-                metric_key=NODE_NETWORK_RECEIVE,
-                label_filters={"device": "eth0"},
-            ),
-            MetricFilter(
-                metric_name=METRIC_NETWORK_TRANSMIT_BYTES,
-                metric_key=NODE_NETWORK_TRANSMIT,
-                label_filters={"device": "eth0"},
-            ),
-        ],
-    )
-
     def __init__(self):
         """Initialize node exporter provider."""
         super().__init__(PROVIDER_NAME_NODE_EXPORTER, RESOURCE_TYPE_NODE)
-        self.__process_virtual_resource_metric_filters()
 
-    def __process_virtual_resource_metric_filters(self):
+    def get_config(self) -> ProviderConfig:
+        """Return provider configuration."""
+        provider_config = ProviderConfig(
+            identifier_metric=NODE_EXPORTER_BUILD_INFO,
+            version_label=NODE_EXPORTER_VERSION_LABEL,
+            resource_identifier=NODE_EXPORTER_RESOURCE_LABEL,
+            metric_filters=[
+                MetricFilter(metric_name=METRIC_UPTIME_SECONDS, metric_key=NODE_TIME),
+                MetricFilter(
+                    metric_name=METRIC_UPTIME_SECONDS, metric_key=NODE_BOOT_TIME
+                ),
+                MetricFilter(
+                    metric_name=METRIC_CPU_TEMP,
+                    metric_key=NODE_CPU_TEMP,
+                    label_filters={"type": "cpu-thermal"},
+                ),
+                MetricFilter(
+                    metric_name=METRIC_CPU_USAGE_PCT,
+                    metric_key=NODE_CPU_IDLE_SECONDS,
+                    label_filters={"mode": "idle"},
+                ),
+                MetricFilter(
+                    metric_name=METRIC_MEMORY_USAGE_BYTES,
+                    metric_key=NODE_MEMORY_FREE,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_MEMORY_USAGE_BYTES,
+                    metric_key=NODE_MEMORY_TOTAL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_MEMORY_USAGE_BYTES,
+                    metric_key=NODE_MEMORY_SWAP_TOTAL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_MEMORY_USAGE_PCT, metric_key=NODE_MEMORY_FREE
+                ),
+                MetricFilter(
+                    metric_name=METRIC_MEMORY_USAGE_PCT,
+                    metric_key=NODE_MEMORY_TOTAL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_MEMORY_USAGE_PCT,
+                    metric_key=NODE_MEMORY_SWAP_TOTAL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_DISK_USAGE_BYTES,
+                    metric_key=NODE_FILESYSTEM_SIZE,
+                    label_filters={"mountpoint": "/"},
+                ),
+                MetricFilter(
+                    metric_name=METRIC_DISK_USAGE_BYTES,
+                    metric_key=NODE_FILESYSTEM_FREE,
+                    label_filters={"mountpoint": "/"},
+                ),
+                MetricFilter(
+                    metric_name=METRIC_DISK_USAGE_PCT,
+                    metric_key=NODE_FILESYSTEM_SIZE,
+                    label_filters={"mountpoint": "/"},
+                ),
+                MetricFilter(
+                    metric_name=METRIC_DISK_USAGE_PCT,
+                    metric_key=NODE_FILESYSTEM_FREE,
+                    label_filters={"mountpoint": "/"},
+                ),
+                MetricFilter(
+                    metric_name=METRIC_NETWORK_RECEIVE_BYTES,
+                    metric_key=NODE_NETWORK_RECEIVE,
+                    label_filters={"device": "eth0"},
+                ),
+                MetricFilter(
+                    metric_name=METRIC_NETWORK_TRANSMIT_BYTES,
+                    metric_key=NODE_NETWORK_TRANSMIT,
+                    label_filters={"device": "eth0"},
+                ),
+                MetricFilter(
+                    metric_name=METRIC_CONTAINER_STATUS_CREATED,
+                    metric_key=CONTAINER_STATE_STATUS,
+                    label_filters={"status": "created"},
+                    resource_label=NODE_CONTAINER_RESOURCE_LABEL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_CONTAINER_STATUS_DEAD,
+                    metric_key=CONTAINER_STATE_STATUS,
+                    label_filters={"status": "dead"},
+                    resource_label=NODE_CONTAINER_RESOURCE_LABEL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_CONTAINER_STATUS_EXITED,
+                    metric_key=CONTAINER_STATE_STATUS,
+                    label_filters={"status": "exited"},
+                    resource_label=NODE_CONTAINER_RESOURCE_LABEL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_CONTAINER_STATUS_PAUSED,
+                    metric_key=CONTAINER_STATE_STATUS,
+                    label_filters={"status": "paused"},
+                    resource_label=NODE_CONTAINER_RESOURCE_LABEL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_CONTAINER_STATUS_REMOVING,
+                    metric_key=CONTAINER_STATE_STATUS,
+                    label_filters={"status": "removing"},
+                    resource_label=NODE_CONTAINER_RESOURCE_LABEL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_CONTAINER_STATUS_RESTARTING,
+                    metric_key=CONTAINER_STATE_STATUS,
+                    label_filters={"status": "restarting"},
+                    resource_label=NODE_CONTAINER_RESOURCE_LABEL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_CONTAINER_STATUS_RUNNING,
+                    metric_key=CONTAINER_STATE_STATUS,
+                    label_filters={"status": "running"},
+                    resource_label=NODE_CONTAINER_RESOURCE_LABEL,
+                ),
+                MetricFilter(
+                    metric_name=METRIC_CONTAINER_UPTIME,
+                    metric_key=CONTAINER_STATE_STARTEDAT,
+                    resource_label=NODE_CONTAINER_RESOURCE_LABEL,
+                ),
+            ],
+        )
         # Extract virtual resource keys and names
         virtual_resource_metric_keys = []
         virtual_resource_metric_names = []
-        for metric_filter in self.CONFIG.metric_filters:
+        for metric_filter in provider_config.metric_filters:
             if metric_filter.resource_label is not None:
                 if metric_filter.metric_key not in virtual_resource_metric_keys:
                     virtual_resource_metric_keys.append(metric_filter.metric_key)
@@ -136,10 +196,8 @@ class NodeExporterProvider(MetricsProvider):
                     virtual_resource_metric_names.append(metric_filter.metric_name)
         self.__virtual_resource_metric_keys = virtual_resource_metric_keys
         self.__virtual_resource_metric_names = virtual_resource_metric_names
-
-    def get_config(self) -> ProviderConfig:
-        """Return provider configuration."""
-        return self.CONFIG
+        # Return provider config
+        return provider_config
 
     def extract_provider_info(self, family: Metric, metadata: MetadataData):
         """Extract and store provider information."""
@@ -165,8 +223,12 @@ class NodeExporterProvider(MetricsProvider):
                     self.resource_name = nodename
         elif family.name == NODE_OS_INFO:
             for sample in family.samples:
-                resource_info.software = sample.labels.get("pretty_name", "")
-                resource_info.version = sample.labels.get("version", "")
+                resource_info.software = sample.labels.get("pretty_name")
+                resource_info.version = sample.labels.get("version")
+        elif family.name == NODE_DEVICE_INFO:
+            for sample in family.samples:
+                resource_info.model = sample.labels.get("model")
+                resource_info.serial_number = sample.labels.get("serial")
         elif family.name in self.__virtual_resource_metric_keys:
             for sample in family.samples:
                 v_resource_name = sample.labels.get(NODE_CONTAINER_RESOURCE_LABEL)
@@ -184,7 +246,15 @@ class NodeExporterProvider(MetricsProvider):
         for metric_filter in self.get_config().metric_filters:
             # Check if metric is available
             if family.name == metric_filter.metric_key:
-                metric = metric_filter.metric_name
+                # In case of metric_key is a container status metric,
+                if (
+                    metric_filter.metric_name in self.__virtual_resource_metric_names
+                    and metric_filter.metric_name.startswith(METRIC_CONTAINER_STATUS)
+                ):
+                    metric = METRIC_CONTAINER_STATUS
+                # Otherwise, use metric_name
+                else:
+                    metric = metric_filter.metric_name
                 # Add metric to available metrics if not already present
                 if metric not in metadata.available_metrics:
                     metadata.available_metrics.append(metric)
@@ -199,6 +269,9 @@ class NodeExporterProvider(MetricsProvider):
         if metric_key == NODE_CPU_IDLE_SECONDS:
             cpu = sample.labels["cpu"]
             return {cpu: sample.value}
+        if metric_key == CONTAINER_STATE_STATUS:
+            status = sample.labels["status"]
+            return {status: sample.value}
         return sample.value
 
     def process_metrics(self, metrics: dict, update_interval: int) -> dict | None:
@@ -243,7 +316,19 @@ class NodeExporterProvider(MetricsProvider):
         self, resource: str, metrics: dict
     ) -> dict | None:
         """Process virtual resource metrics and return sensor metrics."""
-        return {}
+        sensor_metrics = {}
+        # Calculate container status
+        if CONTAINER_STATE_STATUS in metrics:
+            sensor_metrics[METRIC_CONTAINER_STATUS] = self._calculate_container_status(
+                resource, metrics[CONTAINER_STATE_STATUS]
+            )
+        # Calculate container uptime
+        if CONTAINER_STATE_STARTEDAT in metrics:
+            uptime_seconds, start_time = self._calculate_container_uptime(
+                resource, metrics[CONTAINER_STATE_STARTEDAT]
+            )
+            sensor_metrics[METRIC_CONTAINER_UPTIME] = uptime_seconds
+        return sensor_metrics
 
     def _calculate_cpu_usage(
         self, resource: str, metrics: dict, update_interval: int

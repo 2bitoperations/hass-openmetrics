@@ -39,32 +39,90 @@
     },
     "entity": {
         "sensor": {
-            "uptime_seconds": {
-                "name": "Uptime"
-            },
             "cpu_temp_celsius": {
                 "name": "CPU temperature"
             },
             "cpu_usage_pct": {
-                "name": "CPU usage"
+                "name": "CPU usage",
+                "state_attributes": {
+                    "cpu_cores": {
+                        "name": "CPU cores"
+                    }
+                }
+            },
+            "disk_usage_bytes": {
+                "name": "Disk usage",
+                "state_attributes": {
+                    "disk_size": {
+                        "name": "Disk size"
+                    }
+                }
+            },
+            "disk_usage_pct": {
+                "name": "Disk usage (percent)",
+                "state_attributes": {
+                    "disk_size": {
+                        "name": "Disk size"
+                    }
+                }
+            },
+            "memory_usage_bytes": {
+                "name": "Memory usage",
+                "state_attributes": {
+                    "memory_size": {
+                        "name": "Memory size"
+                    }
+                }
             },
             "memory_usage_pct": {
-                "name": "Memory usage (percent)"
+                "name": "Memory usage (percent)",
+                "state_attributes": {
+                    "memory_size": {
+                        "name": "Memory size"
+                    }
+                }
             },
             "network_receive_bytes": {
                 "name": "Network receive"
             },
-            "disk_usage_bytes": {
-                "name": "Disk usage"
-            },
-            "disk_usage_pct": {
-                "name": "Disk usage (percent)"
-            },
-            "memory_usage_bytes": {
-                "name": "Memory usage"
-            },
             "network_transmit_bytes": {
                 "name": "Network transmit"
+            },
+            "uptime_seconds": {
+                "name": "Uptime",
+                "state_attributes": {
+                    "last_start_time": {
+                        "name": "Start time"
+                    }
+                }
+            },
+            "container_status": {
+                "name": "Status"
+            },
+            "container_uptime": {
+                "name": "Uptime",
+                "state_attributes": {
+                    "last_start_time": {
+                        "name": "Start time"
+                    }
+                }
+            },
+            "device_name": {
+                "name": "Name",
+                "state_attributes": {
+                    "device_model": {
+                        "name": "Model"
+                    },
+                    "device_serial": {
+                        "name": "Serial"
+                    },
+                    "device_software": {
+                        "name": "Software"
+                    },
+                    "device_version": {
+                        "name": "Version"
+                    }
+                }
             }
         }
     },
@@ -100,7 +158,9 @@
                 "memory_usage_pct": "Memory usage (percent)",
                 "network_receive_bytes": "Network receive",
                 "network_transmit_bytes": "Network transmit",
-                "uptime_seconds": "Uptime"
+                "uptime_seconds": "Uptime",
+                "container_status": "Container status",
+                "container_uptime": "Container uptime"
             }
         }
     }

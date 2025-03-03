@@ -25,8 +25,11 @@ from custom_components.openmetrics.metrics.data import ResourceInfoData
 
 from .const import (
     DOMAIN,
+    METRIC_CONTAINER_STATUS,
+    METRIC_CONTAINER_UPTIME,
     METRIC_CPU_TEMP,
     METRIC_CPU_USAGE_PCT,
+    METRIC_DEVICE_NAME,
     METRIC_DISK_USAGE_BYTES,
     METRIC_DISK_USAGE_PCT,
     METRIC_MEMORY_USAGE_BYTES,
@@ -35,6 +38,10 @@ from .const import (
     METRIC_NETWORK_TRANSMIT_BYTES,
     METRIC_UPTIME_SECONDS,
     PROPERTY_CPU_CORES,
+    PROPERTY_DEVICE_MODEL,
+    PROPERTY_DEVICE_SERIAL,
+    PROPERTY_DEVICE_SOFTWARE,
+    PROPERTY_DEVICE_VERSION,
     PROPERTY_DISK_SIZE,
     PROPERTY_LAST_START_TIME,
     PROPERTY_MEMORY_SIZE,
@@ -124,8 +131,30 @@ SENSORS = {
         suggested_display_precision=0,
         translation_key=METRIC_UPTIME_SECONDS,
     ),
+    METRIC_DEVICE_NAME: SensorEntityDescription(
+        key=METRIC_DEVICE_NAME,
+        icon="mdi:information",
+        translation_key=METRIC_DEVICE_NAME,
+        entity_registry_visible_default=False,
+    ),
 }
-VIRTUAL_SENSORS = {}
+VIRTUAL_SENSORS = {
+    METRIC_CONTAINER_STATUS: SensorEntityDescription(
+        key=METRIC_CONTAINER_STATUS,
+        icon="mdi:docker",
+        translation_key=METRIC_CONTAINER_STATUS,
+    ),
+    METRIC_CONTAINER_UPTIME: SensorEntityDescription(
+        key=METRIC_CONTAINER_UPTIME,
+        icon="mdi:clock-outline",
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        suggested_unit_of_measurement=UnitOfTime.DAYS,
+        suggested_display_precision=0,
+        translation_key=METRIC_CONTAINER_UPTIME,
+    ),
+}
 
 
 def get_coordinator_class():
@@ -172,7 +201,7 @@ def create_resource_sensors(
     # Create sensors
     for key, description in sensor_descriptions.items():
         # Check if metric is selected/enabled
-        if key in metric_keys:
+        if key in metric_keys or key == METRIC_DEVICE_NAME:
             sensor = OpenMetricsSensor(coordinator, description, device_info)
             sensors.append(sensor)
     return sensors
@@ -187,10 +216,18 @@ def create_device_info(
     # Create device info object
     device_info = DeviceInfo(
         name=resource.name,
-        model=resource.software,
-        sw_version=resource.version,
         identifiers={(DOMAIN, unique_id)},
     )
+    # Set model if provided
+    if resource.model:
+        device_info["model"] = resource.model
+        device_info["sw_version"] = resource.software
+    else:
+        device_info["model"] = resource.software
+        device_info["sw_version"] = resource.version
+    # Set serial number if provided
+    if resource.serial_number:
+        device_info["serial_number"] = resource.serial_number
     # Set entry type if container
     if resource.type == RESOURCE_TYPE_CONTAINER:
         device_info["entry_type"] = DeviceEntryType.SERVICE
@@ -239,6 +276,8 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
         resource = self.device_info.get("name")
         if not resource:
             return None
+        if METRIC_DEVICE_NAME in self.entity_description.key:
+            return resource
         return self.coordinator.data.get(resource, {}).get(self.entity_description.key)
 
     @property
@@ -246,8 +285,26 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
         """Return the state attributes."""
         # Set the last start time attribute
         if isinstance(self.coordinator, get_coordinator_class()):
+            if self.entity_description.key == METRIC_DEVICE_NAME:
+                properties = {}
+                if self.device_info.get("model"):
+                    properties[PROPERTY_DEVICE_MODEL] = self.device_info.get("model")
+                if self.device_info.get("serial_number"):
+                    properties[PROPERTY_DEVICE_SERIAL] = self.device_info.get(
+                        "serial_number"
+                    )
+                if self.device_info.get("sw_version"):
+                    properties[PROPERTY_DEVICE_SOFTWARE] = self.device_info.get(
+                        "sw_version"
+                    )
+                if self.device_info.get("version"):
+                    properties[PROPERTY_DEVICE_VERSION] = self.device_info.get(
+                        "version"
+                    )
+                return properties
             if (
-                self.entity_description.key == METRIC_UPTIME_SECONDS
+                self.entity_description.key
+                in (METRIC_UPTIME_SECONDS, METRIC_CONTAINER_UPTIME)
                 and self.coordinator.last_start_time is not None
             ):
                 return {PROPERTY_LAST_START_TIME: self.coordinator.last_start_time}

@@ -43,19 +43,44 @@
                 "name": "CPU-Temperatur"
             },
             "cpu_usage_pct": {
-                "name": "CPU-Auslastung"
+                "name": "CPU-Auslastung",
+                "state_attributes": {
+                    "cpu_cores": {
+                        "name": "CPU-Kerne"
+                    }
+                }
             },
             "disk_usage_bytes": {
-                "name": "Festplattennutzung"
+                "name": "Festplattennutzung",
+                "state_attributes": {
+                    "disk_size": {
+                        "name": "Festplattengrösse"
+                    }
+                }
             },
             "disk_usage_pct": {
-                "name": "Festplattennutzung (Prozent)"
+                "name": "Festplattennutzung (Prozent)",
+                "state_attributes": {
+                    "disk_size": {
+                        "name": "Festplattengrösse"
+                    }
+                }
             },
             "memory_usage_bytes": {
-                "name": "Arbeitsspeichernutzung"
+                "name": "Arbeitsspeichernutzung",
+                "state_attributes": {
+                    "memory_size": {
+                        "name": "Arbeitsspeichergrösse"
+                    }
+                }
             },
             "memory_usage_pct": {
-                "name": "Arbeitsspeichernutzung (Prozent)"
+                "name": "Arbeitsspeichernutzung (Prozent)",
+                "state_attributes": {
+                    "memory_size": {
+                        "name": "Arbeitsspeichergrösse"
+                    }
+                }
             },
             "network_receive_bytes": {
                 "name": "Dateneingang"
@@ -64,7 +89,40 @@
                 "name": "Datenausgang"
             },
             "uptime_seconds": {
-                "name": "Laufzeit"
+                "name": "Laufzeit",
+                "state_attributes": {
+                    "last_start_time": {
+                        "name": "Startzeit"
+                    }
+                }
+            },
+            "container_status": {
+                "name": "Status"
+            },
+            "container_uptime": {
+                "name": "Laufzeit",
+                "state_attributes": {
+                    "last_start_time": {
+                        "name": "Startzeit"
+                    }
+                }
+            },
+            "device_name": {
+                "name": "Name",
+                "state_attributes": {
+                    "device_model": {
+                        "name": "Modell"
+                    },
+                    "device_serial": {
+                        "name": "Seriennummer"
+                    },
+                    "device_software": {
+                        "name": "Software"
+                    },
+                    "device_version": {
+                        "name": "Version"
+                    }
+                }
             }
         }
     },
@@ -100,7 +158,9 @@
                 "memory_usage_pct": "Arbeitspeichernutzung (Prozent)",
                 "network_receive_bytes": "Dateneingang",
                 "network_transmit_bytes": "Datenausgang",
-                "uptime_seconds": "Laufzeit"
+                "uptime_seconds": "Laufzeit",
+                "container_status": "Container-Status",
+                "container_uptime": "Container-Laufzeit"
             }
         }
     }
