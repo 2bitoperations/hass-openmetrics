@@ -23,7 +23,7 @@ from .client import (
     OpenMetricsClient,
     RequestError,
 )
-from .const import DOMAIN
+from .const import CONF_RESOURCES, DOMAIN
 from .coordinator import OpenMetricsDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,7 +51,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator = OpenMetricsDataUpdateCoordinator(
             hass,
             client=client,
-            resources=metadata.resources,
+            resources={
+                resource_key: resource
+                for resource_key, resource in metadata.resources.items()
+                if resource_key in entry.data[CONF_RESOURCES] or resource.is_virtual
+            },
             update_interval=int(entry.data[CONF_SCAN_INTERVAL]),
         )
         # Get the host name from the URL
@@ -62,7 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "coordinator": coordinator,
             "host": host,
         }
-        # Forward the setup to your platforms, passing the coordinator to them
+        # Forward the setup to your platforms
         for platform in PLATFORMS:
             hass.async_create_task(
                 hass.config_entries.async_forward_entry_setup(entry, platform)

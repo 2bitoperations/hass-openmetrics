@@ -368,9 +368,10 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
         host = self.hass.data[DOMAIN][self.config_entry.entry_id]["host"]
         # Create sensors
         for resource in coordinator.resources.values():
-            if resource.name == device_entry.name or (
+            if (resource.name == device_entry.name and not resource.is_virtual) or (
                 resource.via_resource == device_entry.name
                 and metric_key in VIRTUAL_SENSORS
+                and resource.is_virtual
             ):
                 sensors.extend(
                     create_resource_sensors(resource, host, coordinator, [metric_key])

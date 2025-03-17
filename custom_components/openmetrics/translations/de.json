@@ -159,6 +159,7 @@
                 "network_receive_bytes": "Dateneingang",
                 "network_transmit_bytes": "Datenausgang",
                 "uptime_seconds": "Laufzeit",
+                "device_name": "Name",
                 "container_status": "Container-Status",
                 "container_uptime": "Container-Laufzeit"
             }

@@ -78,6 +78,13 @@ class OpenMetricsClient:
                 f"Request failed with status code '{response.status}' and reason '{response.reason}'"
             )
 
+    async def check_connection(self) -> bool:
+        """Check connection to the metrics provider."""
+        response_text, content_type = await self._async_request_data()
+        if response_text and content_type:
+            return True
+        return False
+
     async def get_metadata(self) -> MetadataData:
         """Get metadata from a metrics provider."""
         response_text, content_type = await self._async_request_data()

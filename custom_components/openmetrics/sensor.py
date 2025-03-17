@@ -201,7 +201,7 @@ def create_resource_sensors(
     # Create sensors
     for key, description in sensor_descriptions.items():
         # Check if metric is selected/enabled
-        if key in metric_keys or key == METRIC_DEVICE_NAME:
+        if key in metric_keys:
             sensor = OpenMetricsSensor(coordinator, description, device_info)
             sensors.append(sensor)
     return sensors

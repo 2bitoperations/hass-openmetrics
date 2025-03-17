@@ -1,12 +1,10 @@
 """Registry for provider configurations."""
 
-from ..const import (
-    CADVISOR_VERSION_INFO,
-    NODE_EXPORTER_BUILD_INFO,
-)
+from custom_components.openmetrics.providers.generic import GenericProvider
+
 from .base import MetricsProvider
-from .cadvisor import CadvisorProvider
-from .node_exporter import NodeExporterProvider
+from .cadvisor import CADVISOR_VERSION_INFO, CadvisorProvider
+from .node_exporter import NODE_EXPORTER_BUILD_INFO, NodeExporterProvider
 
 
 class ProviderRegistry:
@@ -18,7 +16,12 @@ class ProviderRegistry:
             NODE_EXPORTER_BUILD_INFO: NodeExporterProvider(),
             CADVISOR_VERSION_INFO: CadvisorProvider(),
         }
+        self.__default_provider = GenericProvider()
 
     def get_provider(self, identifier_metric: str) -> MetricsProvider | None:
         """Get provider based on identifier metric."""
         return self.providers.get(identifier_metric)
+
+    def get_default_provider(self) -> MetricsProvider:
+        """Get default provider."""
+        return self.__default_provider

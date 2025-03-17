@@ -5,6 +5,8 @@ from datetime import datetime
 
 from homeassistant.exceptions import HomeAssistantError
 
+from custom_components.openmetrics.providers.base import MetricsProvider
+
 from ..const import (
     CONTENT_TYPE_OPENMETRICS,
     CONTENT_TYPE_TEXT,
@@ -40,34 +42,12 @@ class OpenMetricsProcessor:
         """Initialize metrics processor."""
         self._registry = ProviderRegistry()
         self._previous_metrics = {}
-
-    def _ensure_provider(self, families: list[Metric]):
-        """Ensure provider is detected and configured."""
-        # Check if any metrics are available
-        if not families:
-            _LOGGER.error("No metrics found in provided families")
-            raise MetricsError("No metrics found")
-        # Search metrics for provider
-        if not hasattr(self, "_provider"):
-            for family in families:
-                provider = self._registry.get_provider(family.name)
-                if provider:
-                    # Set provider
-                    self._provider = provider
-                    # Set provider config
-                    self._config = self._provider.get_config()
-                    _LOGGER.info(
-                        "Provider detected and configured: %s", self._provider.name
-                    )
-                    break
-        # If no provider is found, raise an error
-        if not hasattr(self, "_provider"):
-            _LOGGER.error("No matching provider found in provided metrics")
-            raise ProviderError("No supported provider found")
+        self._provider = self._registry.get_default_provider()
 
     def parse_data(self, response_text: str, content_type: str | None) -> list[Metric]:
         """Parse metrics provider data."""
         try:
+            _LOGGER.debug("Metrics provider: %s", self._provider.name)
             # Parse prometheus text format
             if content_type and CONTENT_TYPE_TEXT in content_type:
                 families = prom_parser.text_string_to_metric_families(response_text)
@@ -80,83 +60,119 @@ class OpenMetricsProcessor:
         except Exception as e:
             raise ProcessingError(str(e)) from e
         else:
+            # Return metrics
             _LOGGER.debug("Metrics successfully parsed")
             return list(families)
 
+    def __detect_provider(self, families: list[Metric]) -> MetricsProvider | None:
+        """Filter relevant metrics."""
+        relevant_families = []
+        provider = None
+        for family in families:
+            # Get provider info metric
+            provider_info = self._provider.search_provider_info_metric(family)
+            if provider_info:
+                relevant_families.append(provider_info)
+                provider = self._registry.get_provider(family.name)
+                if provider:
+                    _LOGGER.debug("Metrics provider detected: %s", provider.name)
+                    break
+        # Return provider
+        return provider
+
+    def __filter_relevant_resource_metrics(
+        self, families: list[Metric]
+    ) -> list[Metric]:
+        """Filter relevant metrics."""
+        relevant_families = []
+        provider = None
+        for family in families:
+            # Get resource metric
+            metric = self._provider.search_resource_metric(family)
+            if metric:
+                relevant_families.append(metric)
+                continue
+        # Set provider if found
+        if provider:
+            self._provider = provider
+        # Return relevant metrics
+        _LOGGER.debug("Metrics successfully filtered")
+        return relevant_families
+
     def extract_metadata(self, families: list[Metric]) -> MetadataData:
         """Extract provider metadata and available metrics."""
-        # Ensure provider is defined
-        self._ensure_provider(families)
-        # Create collector for metadata extraction
-        metadata = MetadataData(
-            provider_info=ProviderInfoData(
-                name=self._provider.name,
-                type=self._provider.resource_type,
-                version=None,
-            ),
-            resources={},
-            available_metrics=[],
+        # Detect and set provider
+        provider = self.__detect_provider(families)
+        if provider:
+            self._provider = provider
+        # Define provider related metadata
+        provider_info = ProviderInfoData(
+            name=self._provider.name,
+            type=self._provider.resource_type,
+            version=None,
         )
+        resources = {}
+        available_metrics = []
         # Extract provider related metadata from metric families
         for family in families:
-            self._provider.extract_provider_info(family, metadata)
-            self._provider.extract_resource_info(family, metadata)
-            self._provider.extract_available_metrics(family, metadata)
-        # Cleanup metadata resources dict
-        if self._provider.name in metadata.resources:
-            main_resource = metadata.resources[self._provider.name]
-            if main_resource.name:
-                metadata.resources[main_resource.name] = main_resource
-                del metadata.resources[self._provider.name]
-                for resource in metadata.resources.values():
-                    if resource.name != main_resource.name:
-                        resource.via_resource = main_resource.name
-        # Collect and return provider related metadata
+            self._provider.extract_provider_info(family, provider_info)
+            self._provider.extract_resource_info(family, resources)
+            self._provider.collect_supported_metric(family, available_metrics)
+        # Post process resources
+        resources = self._provider.post_process_resources(resources)
+        # Return provider related metadata
         _LOGGER.debug("Metadata successfully extracted")
-        return metadata
+        return MetadataData(
+            provider_info=provider_info,
+            resources=resources,
+            available_metrics=available_metrics,
+        )
 
     def extract_metrics(self, families: list[Metric], resources: list[str]) -> dict:
         """Extract metrics for specified resources."""
         extracted_metrics = {}
-        # Ensure provider is defined
-        self._ensure_provider(families)
+        # Filter relevant metrics
+        relevant_families = self.__filter_relevant_resource_metrics(families)
         # Extract metrics of all relevant metric families
-        for family in families:
-            for metric_filter in self._config.metric_filters:
-                if family.name == metric_filter.metric_key:
+        for family in relevant_families:
+            for metric_filter in self._provider.get_metric_filters():
+                # Check if metric family is relevant
+                if metric_filter.matches_metric(family.name):
                     for sample in family.samples:
-                        # Check if metric is relevant
-                        is_relevant, resource = metric_filter.matches(sample)
-                        # Set resource according to provider resource
-                        if not resource and self._provider.resource_name:
-                            resource = self._provider.resource_name
-                        if is_relevant:
-                            # Check if resource is relevant
-                            if resource in resources:
-                                # Initialize resource dictionary
-                                if resource not in extracted_metrics:
-                                    extracted_metrics[resource] = {}
-                                # Initialize metric dictionary
-                                if (
-                                    metric_filter.metric_key
-                                    not in extracted_metrics[resource]
-                                ):
-                                    extracted_metrics[resource][
-                                        metric_filter.metric_key
-                                    ] = {}
-                                # Prepare metric value
-                                metric_value = self._provider.prepare_metric_value(
-                                    metric_filter.metric_key, sample
+                        # Check if metric sample is relevant
+                        if metric_filter.matches_labels(sample):
+                            # Set metric key without "_total" suffix
+                            if sample.name.endswith("_total"):
+                                metric_key = sample.name.replace("_total", "")
+                            else:
+                                metric_key = sample.name
+                            # Set resource according to provider
+                            if (
+                                metric_filter.resource_label
+                                and metric_filter.resource_label in sample.labels
+                            ):
+                                resource = sample.labels[metric_filter.resource_label]
+                            elif self._provider.resource_name:
+                                resource = self._provider.resource_name
+                            else:
+                                resource = self._provider.name
+                            # Initialize resource dictionary
+                            if resource not in extracted_metrics:
+                                extracted_metrics[resource] = {}
+                            # Initialize metric dictionary
+                            if metric_key not in extracted_metrics[resource]:
+                                extracted_metrics[resource][metric_key] = {}
+                            # Prepare metric value
+                            metric_value = self._provider.prepare_metric_value(
+                                metric_key, sample
+                            )
+                            # Add metric value to dictionary
+                            if isinstance(metric_value, dict):
+                                extracted_metrics[resource][metric_key].update(
+                                    metric_value
                                 )
-                                # Add metric value to dictionary
-                                if isinstance(metric_value, dict):
-                                    extracted_metrics[resource][
-                                        metric_filter.metric_key
-                                    ].update(metric_value)
-                                else:
-                                    extracted_metrics[resource][
-                                        metric_filter.metric_key
-                                    ] = metric_value
+                            else:
+                                extracted_metrics[resource][metric_key] = metric_value
         if extracted_metrics:
             _LOGGER.debug("Metrics successfully extracted")
         else:
