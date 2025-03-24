@@ -221,14 +221,14 @@ class CadvisorProvider(MetricsProvider):
                     swap_bytes = metrics[self.RESOURCE_NAME][metric_key]
                     swap_bytes_metric_key = metric_key
             # Share common metrics
-            for metric_key in metrics:
+            for metric_key, metric in metrics.items():
                 if metric_key != self.RESOURCE_NAME:
                     # Share CPU cores
                     if cpu_cores is not None:
-                        metrics[metric_key][cpu_cores_metric_key] = cpu_cores
+                        metric[cpu_cores_metric_key] = cpu_cores
                     # Share memory
                     if memory_bytes is not None:
-                        metrics[metric_key][memory_bytes_metric_key] = memory_bytes
+                        metric[memory_bytes_metric_key] = memory_bytes
                     # Share swap
                     if swap_bytes is not None:
                         metrics[metric_key][swap_bytes_metric_key] = swap_bytes

@@ -238,11 +238,11 @@ class GenericProvider(MetricsProvider):
                     cpu_cores_metric_key = metric_key
                     break
             # Share common metrics
-            for metric_key in metrics:
+            for metric_key, metric in metrics.items():
                 if metric_key != self.RESOURCE_NAME:
                     # Share CPU cores
                     if cpu_cores is not None:
-                        metrics[metric_key][cpu_cores_metric_key] = cpu_cores
+                        metric[cpu_cores_metric_key] = cpu_cores
 
     def _calculate_cpu_usage(
         self, resource: str, metrics: dict, update_interval: int
