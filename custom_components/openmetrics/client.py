@@ -50,7 +50,7 @@ class OpenMetricsClient:
     ) -> aiohttp.ClientResponse:
         """Make an HTTP request."""
         return await session.request(
-            method, url, headers=headers, data=data, verify_ssl=self.verify_ssl
+            method, url, headers=headers, data=data, ssl=self.verify_ssl
         )
 
     async def _async_request_data(self) -> tuple[str, str | None]:

@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
-from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.const import (
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
@@ -14,7 +14,6 @@ from homeassistant.const import (
     CONF_VERIFY_SSL,
     Platform,
 )
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -41,12 +40,12 @@ from .sensor import VIRTUAL_SENSORS, create_resource_sensors
 _LOGGER = logging.getLogger(__name__)
 
 
-class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
+class OpenMetricsOptionsFlowHandler(OptionsFlow):
     """Options flow handler for the OpenMetrics integration."""
 
     metadata: MetadataData
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
         self.client = self._create_client(dict(config_entry.data))
@@ -94,7 +93,7 @@ class OpenMetricsOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Manage the options."""
         errors: dict[str, str] = {}
         configured_resources = self.config_entry.data[CONF_RESOURCES]
