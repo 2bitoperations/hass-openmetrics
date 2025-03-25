@@ -54,7 +54,7 @@ NODE_CONTAINER_RESTARTCOUNT = "container_restartcount"
 # Labels
 NODE_EXPORTER_VERSION_LABEL = "version"
 NODE_EXPORTER_RESOURCE_LABEL = "nodename"
-NODE_EXPORTER_OS_NAME_LABEL = "pretty_name"
+NODE_EXPORTER_OS_NAME_LABEL = "name"
 NODE_EXPORTER_OS_VERSION_LABEL = "version"
 NODE_EXPORTER_DEVICE_MODEL_LABEL = "model"
 NODE_EXPORTER_DEVICE_SERIAL_LABEL = "serial"
@@ -189,20 +189,27 @@ class NodeExporterProvider(MetricsProvider):
                 if nodename:
                     resource_info.name = nodename
                     self.resource_name = nodename
+        # Get software
         elif family.name == NODE_OS_INFO:
             for sample in family.samples:
-                resource_info.software = sample.labels.get(NODE_EXPORTER_OS_NAME_LABEL)
-                resource_info.version = sample.labels.get(
-                    NODE_EXPORTER_OS_VERSION_LABEL
-                )
+                if sample.labels.get(NODE_EXPORTER_OS_NAME_LABEL):
+                    resource_info.software = sample.labels[NODE_EXPORTER_OS_NAME_LABEL]
+                if sample.labels.get(NODE_EXPORTER_OS_VERSION_LABEL):
+                    resource_info.version = sample.labels[
+                        NODE_EXPORTER_OS_VERSION_LABEL
+                    ]
+        # Get model and serial number
         elif family.name == NODE_DEVICE_INFO:
             for sample in family.samples:
-                resource_info.model = sample.labels.get(
-                    NODE_EXPORTER_DEVICE_MODEL_LABEL
-                )
-                resource_info.serial_number = sample.labels.get(
-                    NODE_EXPORTER_DEVICE_SERIAL_LABEL
-                )
+                if sample.labels.get(NODE_EXPORTER_DEVICE_MODEL_LABEL):
+                    resource_info.model = sample.labels[
+                        NODE_EXPORTER_DEVICE_MODEL_LABEL
+                    ]
+                if sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL):
+                    resource_info.serial_number = sample.labels[
+                        NODE_EXPORTER_DEVICE_SERIAL_LABEL
+                    ]
+        # Get virtual resource info
         elif family.name in self.__virtual_resource_metric_keys:
             for sample in family.samples:
                 v_resource_name = sample.labels.get(NODE_CONTAINER_RESOURCE_LABEL)
@@ -210,7 +217,7 @@ class NodeExporterProvider(MetricsProvider):
                     v_resource_info = ResourceInfoData(
                         type=RESOURCE_TYPE_CONTAINER,
                         name=v_resource_name,
-                        software=sample.labels.get(NODE_CONTAINER_IMAGE_LABEL),
+                        model=sample.labels.get(NODE_CONTAINER_IMAGE_LABEL),
                         is_virtual=True,
                     )
                     resources[v_resource_name] = v_resource_info

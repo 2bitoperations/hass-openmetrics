@@ -39,6 +39,7 @@ CADVISOR_VERSION_LABEL = "cadvisorVersion"
 CADVISOR_RESOURCE_LABEL = "name"
 CONTAINER_IMAGE_NAME_LABEL = "image"
 CONTAINER_IMAGE_VERSION_LABEL = "container_label_org_opencontainers_image_version"
+CONTAINER_IMAGE_SERIAL_LABEL = "container_label_org_opencontainers_image_revision"
 CONTAINER_NETWORK_INTERFACE_LABEL = "interface"
 MACHINE_ID_LABEL = "machine_id"
 
@@ -162,11 +163,27 @@ class CadvisorProvider(MetricsProvider):
             for sample in family.samples:
                 name = sample.labels.get(CADVISOR_RESOURCE_LABEL, None)
                 if name is not None and name != "" and name not in resources:
+                    model = None
+                    software = name
+                    version = None
+                    serial_number = None
+                    # Get model
+                    if sample.labels.get(CONTAINER_IMAGE_NAME_LABEL):
+                        model = sample.labels[CONTAINER_IMAGE_NAME_LABEL]
+                    # Get version
+                    if sample.labels.get(CONTAINER_IMAGE_VERSION_LABEL):
+                        version = sample.labels[CONTAINER_IMAGE_VERSION_LABEL]
+                    # Get serial number
+                    if sample.labels.get(CONTAINER_IMAGE_SERIAL_LABEL):
+                        serial_number = sample.labels[CONTAINER_IMAGE_SERIAL_LABEL]
+                    # Create resource info
                     resources[name] = ResourceInfoData(
                         type=RESOURCE_TYPE_CONTAINER,
                         name=name,
-                        software=sample.labels.get(CONTAINER_IMAGE_NAME_LABEL, ""),
-                        version=sample.labels.get(CONTAINER_IMAGE_VERSION_LABEL, ""),
+                        model=model,
+                        software=software,
+                        version=version,
+                        serial_number=serial_number,
                     )
 
     def collect_supported_metric(self, family: Metric, available_metrics: list[str]):

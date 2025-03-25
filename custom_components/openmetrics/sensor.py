@@ -41,11 +41,11 @@ from .const import (
     PROPERTY_DEVICE_MODEL,
     PROPERTY_DEVICE_SERIAL,
     PROPERTY_DEVICE_SOFTWARE,
-    PROPERTY_DEVICE_VERSION,
     PROPERTY_DISK_SIZE,
     PROPERTY_LAST_START_TIME,
     PROPERTY_MEMORY_SIZE,
     RESOURCE_TYPE_CONTAINER,
+    RESOURCE_TYPE_NODE,
 )
 
 SENSORS = {
@@ -213,7 +213,7 @@ def create_device_info(
     via_device: tuple[str, str] | None = None,
 ) -> DeviceInfo:
     """Create a device info object for a resource."""
-    # Create device info object
+    # Create device info object with the minimal required fields (-> Generic provider)
     device_info = DeviceInfo(
         name=resource.name,
         identifiers={(DOMAIN, unique_id)},
@@ -221,19 +221,23 @@ def create_device_info(
     # Set model if provided
     if resource.model:
         device_info["model"] = resource.model
-        device_info["sw_version"] = resource.software
-    else:
-        device_info["model"] = resource.software
-        device_info["sw_version"] = resource.version
     # Set serial number if provided
     if resource.serial_number:
         device_info["serial_number"] = resource.serial_number
-    # Set entry type if container
-    if resource.type == RESOURCE_TYPE_CONTAINER:
-        device_info["entry_type"] = DeviceEntryType.SERVICE
     # Set via_device if provided
     if via_device:
         device_info["via_device"] = via_device
+    # Set resource type related attributes
+    if resource.type == RESOURCE_TYPE_CONTAINER:
+        # Set software version
+        device_info["sw_version"] = resource.version
+        # Set entry type
+        device_info["entry_type"] = DeviceEntryType.SERVICE
+    elif resource.type == RESOURCE_TYPE_NODE:
+        if resource.software and resource.version:
+            device_info["sw_version"] = f"{resource.software} {resource.version}"
+        else:
+            device_info["sw_version"] = resource.software
     # Return the device info object
     return device_info
 
@@ -287,20 +291,35 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
         if isinstance(self.coordinator, get_coordinator_class()):
             if self.entity_description.key == METRIC_DEVICE_NAME:
                 properties = {}
+                # Model
+                properties[PROPERTY_DEVICE_MODEL] = "n/a"
                 if self.device_info.get("model"):
-                    properties[PROPERTY_DEVICE_MODEL] = self.device_info.get("model")
+                    model = self.device_info.get("model")
+                    if model:
+                        properties[PROPERTY_DEVICE_MODEL] = model
+                # Software
+                properties[PROPERTY_DEVICE_SOFTWARE] = "n/a"
+                if self.device_info.get("sw_version"):
+                    if self.device_info.get("entry_type") == DeviceEntryType.SERVICE:
+                        name = self.device_info.get("name")
+                        if model:
+                            image_name = self.__extract_image_name(model)
+                            if image_name:
+                                name = image_name
+                        properties[PROPERTY_DEVICE_SOFTWARE] = (
+                            f"{name} {self.device_info.get('sw_version')}"
+                        )
+                    else:
+                        properties[PROPERTY_DEVICE_SOFTWARE] = self.device_info.get(
+                            "sw_version"
+                        )
+                # Serial number
+                properties[PROPERTY_DEVICE_SERIAL] = "n/a"
                 if self.device_info.get("serial_number"):
                     properties[PROPERTY_DEVICE_SERIAL] = self.device_info.get(
                         "serial_number"
                     )
-                if self.device_info.get("sw_version"):
-                    properties[PROPERTY_DEVICE_SOFTWARE] = self.device_info.get(
-                        "sw_version"
-                    )
-                if self.device_info.get("version"):
-                    properties[PROPERTY_DEVICE_VERSION] = self.device_info.get(
-                        "version"
-                    )
+                # Return the properties
                 return properties
             if (
                 self.entity_description.key
@@ -324,3 +343,10 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
             ) and self.coordinator.disk_size is not None:
                 return {PROPERTY_DISK_SIZE: self.coordinator.disk_size}
             return None
+
+    def __extract_image_name(self, image_string: str) -> str:
+        """Extract image name from image string."""
+        # Split by the last slash
+        last_part = image_string.split("/")[-1]
+        # Split by colon and take the first part
+        return last_part.split(":")[0]

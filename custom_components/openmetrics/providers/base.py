@@ -95,7 +95,7 @@ class MetricsProvider(ABC):
     def post_process_resources(self, resources: dict) -> dict[str, ResourceInfoData]:
         """Handle resources - Rename, reorder and link resources."""
         # Reoder and link resources
-        if self.name in resources and len(resources) > 1:
+        if self.name in resources:
             res = {}
             main_resource = resources[self.name]
             # Rename and add main resource
