@@ -71,7 +71,7 @@ class GenericProvider(MetricsProvider):
         ),
         MetricFilter(
             metric_key=NETWORK_BYTES_REGEX,
-            label_filters={"image": ".+", "name": ".+"},
+            label_filters={"image": ".+", "name": ".+", "interface": "eth0"},
             resource_label="name",
         ),
         MetricFilter(

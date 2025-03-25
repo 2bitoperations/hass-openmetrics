@@ -39,6 +39,7 @@ CADVISOR_VERSION_LABEL = "cadvisorVersion"
 CADVISOR_RESOURCE_LABEL = "name"
 CONTAINER_IMAGE_NAME_LABEL = "image"
 CONTAINER_IMAGE_VERSION_LABEL = "container_label_org_opencontainers_image_version"
+CONTAINER_NETWORK_INTERFACE_LABEL = "interface"
 MACHINE_ID_LABEL = "machine_id"
 
 PROVIDER_FILTERS = [
@@ -119,6 +120,7 @@ class CadvisorProvider(MetricsProvider):
             label_filters={
                 CONTAINER_IMAGE_NAME_LABEL: ".+",
                 CADVISOR_RESOURCE_LABEL: ".+",
+                CONTAINER_NETWORK_INTERFACE_LABEL: "eth0",
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
@@ -127,6 +129,7 @@ class CadvisorProvider(MetricsProvider):
             label_filters={
                 CONTAINER_IMAGE_NAME_LABEL: ".+",
                 CADVISOR_RESOURCE_LABEL: ".+",
+                CONTAINER_NETWORK_INTERFACE_LABEL: "eth0",
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
@@ -231,7 +234,9 @@ class CadvisorProvider(MetricsProvider):
                         metric[memory_bytes_metric_key] = memory_bytes
                     # Share swap
                     if swap_bytes is not None:
-                        metrics[metric_key][swap_bytes_metric_key] = swap_bytes
+                        metric[swap_bytes_metric_key] = swap_bytes
+            # Remove machine metrics key
+            metrics.pop(self.RESOURCE_NAME)
 
     def _calculate_cpu_usage(
         self, resource: str, metrics: dict, update_interval: int
@@ -260,7 +265,7 @@ class CadvisorProvider(MetricsProvider):
             self._previous_metrics[resource][CONTAINER_CPU_USAGE] = current_value
             # Calculate CPU usage
             if prev_value is not None and current_value is not None:
-                cpu_cores = metrics.get(MACHINE_CPU_CORES, 1)
+                self.cpu_cores = metrics.get(MACHINE_CPU_CORES, 1)
                 cpu_seconds_delta = (
                     current_value - prev_value
                 )  # max = update interval * cores
@@ -269,12 +274,13 @@ class CadvisorProvider(MetricsProvider):
                     cpu_usage_pct = 100
                 elif cpu_usage_pct and cpu_usage_pct < 0:
                     cpu_usage_pct = 0
-                if cpu_usage_pct > 0:
-                    cpu_usage_pct_core = cpu_usage_pct / cpu_cores
+                if cpu_usage_pct > 0 and self.cpu_cores:
+                    cpu_usage_pct_core = cpu_usage_pct / self.cpu_cores
                 else:
                     cpu_usage_pct_core = cpu_usage_pct
-                for cpu_core in range(int(cpu_cores)):
-                    cpu_core_usage[cpu_core] = cpu_usage_pct_core
+                if self.cpu_cores:
+                    for cpu_core in range(int(self.cpu_cores)):
+                        cpu_core_usage[cpu_core] = cpu_usage_pct_core
         # Return values
         return cpu_usage_pct, cpu_core_usage
 
@@ -301,7 +307,7 @@ class CadvisorProvider(MetricsProvider):
             memory_usage_pct = memory_usage_bytes / memory_total_bytes * 100
         # Set memory size
         if memory_total_bytes:
-            self._memory_size = memory_total_bytes
+            self.memory_size = memory_total_bytes
         # Return values
         return memory_usage_bytes, memory_usage_pct
 
