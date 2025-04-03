@@ -30,7 +30,7 @@ class GenericProvider(MetricsProvider):
     # Metric regexes
     CPU_CORES_REGEX = "^[^_]+_cpu_cores$"
     CPU_SECONDS_REGEX = "^(?!process)[^_]+_cpu(?:_usage)?_seconds$"
-    MEMORY_BYTES_REGEX = "^[^_]+(?:_spec)?_memory(?:_(?:usage|limit|(?:MemFree|MemTotal|SwapTotal)))?_bytes$"
+    MEMORY_BYTES_REGEX = "^[^_]+(?:_spec)?_memory(?:_(?:usage|limit|(?:MemAvailable|MemTotal|SwapTotal)))?_bytes$"
     DISK_BYTES_REGEX = "^[^_]+_(?:filesystem|fs)_(?:size|free|limit|usage)_bytes$"
     NETWORK_BYTES_REGEX = "^[^_]+(?:_spec)?_network_(?:receive|transmit)_bytes$"
     TIME_SECONDS_REGEX = "^(?!process)[^_]+(?:_start|_boot)?_time_seconds$"
@@ -137,49 +137,49 @@ class GenericProvider(MetricsProvider):
     def collect_supported_metric(self, family: Metric, available_metrics: list[str]):
         """Collect supported metrics."""
         # CPU
-        if re.match("(?i).+_cpu_usage", family.name):
+        if re.match(".+_cpu_usage", family.name, re.IGNORECASE):
             self.found_metrics["cpu_usage"] = True
-        elif re.match("(?i).+_cpu_cores", family.name):
+        elif re.match(".+_cpu_cores", family.name, re.IGNORECASE):
             self.found_metrics["cpu_cores"] = True
-        elif re.match("(?i).+_cpu_seconds", family.name):
+        elif re.match(".+_cpu_seconds", family.name, re.IGNORECASE):
             self.found_metrics["cpu_seconds"] = True
             self._add_str_to_list_uniquely(METRIC_CPU_USAGE_PCT, available_metrics)
         # Memory
-        elif re.match("(?i).+_memory_limit", family.name):
+        elif re.match(".+_memory_limit", family.name, re.IGNORECASE):
             self.found_metrics["memory_limit"] = True
-        elif re.match("(?i).+_memory_bytes", family.name):
+        elif re.match(".+_memory_bytes", family.name, re.IGNORECASE):
             self.found_metrics["memory_bytes"] = True
-        elif re.match("(?i).+_memory_usage", family.name):
+        elif re.match(".+_memory_usage", family.name, re.IGNORECASE):
             self.found_metrics["memory_usage"] = True
-        elif re.match("(?i).+_memory.*total", family.name):
+        elif re.match(".+_memory.*total", family.name, re.IGNORECASE):
             self.found_metrics["memory_total"] = True
-        elif re.match("(?i).+memory.*free", family.name):
+        elif re.match(".+memory.*(?:avail|free)", family.name, re.IGNORECASE):
             self.found_metrics["memory_free"] = True
         # Filesystem
-        elif re.match(".+_(?:fs|filesystem).*limit", family.name):
+        elif re.match(".+_(?:fs|filesystem).*limit", family.name, re.IGNORECASE):
             self.found_metrics["filesystem_limit"] = True
-        elif re.match(".+_(?:fs|filesystem).*usage", family.name):
+        elif re.match(".+_(?:fs|filesystem).*usage", family.name, re.IGNORECASE):
             self.found_metrics["filesystem_usage"] = True
-        elif re.match(".+_(?:fs|filesystem).*size", family.name):
+        elif re.match(".+_(?:fs|filesystem).*size", family.name, re.IGNORECASE):
             self.found_metrics["filesystem_size"] = True
-        elif re.match(".+_(?:fs|filesystem).*free", family.name):
+        elif re.match(".+_(?:fs|filesystem).*free", family.name, re.IGNORECASE):
             self.found_metrics["filesystem_free"] = True
         # Network
-        elif re.match(".+_network_receive.*", family.name):
+        elif re.match(".+_network_receive.*", family.name, re.IGNORECASE):
             self.found_metrics["network_receive"] = True
             self._add_str_to_list_uniquely(
                 METRIC_NETWORK_RECEIVE_BYTES, available_metrics
             )
-        elif re.match(".+_network_transmit.*", family.name):
+        elif re.match(".+_network_transmit.*", family.name, re.IGNORECASE):
             self.found_metrics["network_transmit"] = True
             self._add_str_to_list_uniquely(
                 METRIC_NETWORK_TRANSMIT_BYTES, available_metrics
             )
         # Uptime
-        elif re.match(".+start_time.*", family.name):
+        elif re.match(".+start_time.*", family.name, re.IGNORECASE):
             self.found_metrics["start_time"] = True
             self._add_str_to_list_uniquely(METRIC_UPTIME_SECONDS, available_metrics)
-        elif re.match(".+_boot_time.*", family.name):
+        elif re.match(".+_boot_time.*", family.name, re.IGNORECASE):
             self.found_metrics["boot_time"] = True
             self._add_str_to_list_uniquely(METRIC_UPTIME_SECONDS, available_metrics)
 
@@ -233,7 +233,7 @@ class GenericProvider(MetricsProvider):
         if self.RESOURCE_NAME in metrics:
             # Get machine related metrics
             for metric_key in metrics[self.RESOURCE_NAME]:
-                if re.match(self.CPU_CORES_REGEX, metric_key):
+                if re.match(self.CPU_CORES_REGEX, metric_key, re.IGNORECASE):
                     cpu_cores = metrics[self.resource_name][metric_key]
                     cpu_cores_metric_key = metric_key
                     break
@@ -262,9 +262,9 @@ class GenericProvider(MetricsProvider):
         cpu_core_usage = {}
 
         for metric_key in metrics:
-            if re.match(self.CPU_SECONDS_REGEX, metric_key):
+            if re.match(self.CPU_SECONDS_REGEX, metric_key, re.IGNORECASE):
                 cpu_seconds_key = metric_key
-            if re.match(self.CPU_CORES_REGEX, metric_key):
+            if re.match(self.CPU_CORES_REGEX, metric_key, re.IGNORECASE):
                 cpu_cores_key = metric_key
 
         # Calculate CPU usage
@@ -289,7 +289,7 @@ class GenericProvider(MetricsProvider):
                 self._previous_metrics[resource][cpu_seconds_key][cpu] = current_value
                 if prev_value is not None and current_value is not None:
                     # CPU usage seconds
-                    if re.match(".*usage.*", cpu_seconds_key):
+                    if re.match(".*usage.*", cpu_seconds_key, re.IGNORECASE):
                         self.cpu_cores = int(metrics.get(cpu_cores_key, 1))
                         cpu_usage_time_delta = (
                             current_value - prev_value
@@ -355,8 +355,11 @@ class GenericProvider(MetricsProvider):
                 memory_total_key = metric_key
             elif re.match(".*memory(?=.*swap)(?=.*total).*", metric_key, re.IGNORECASE):
                 memory_swap_key = metric_key
-            elif re.match(".*memory.*free.*", metric_key, re.IGNORECASE):
+            elif re.match(".*memory.*avail.*", metric_key, re.IGNORECASE):
                 memory_free_key = metric_key
+            elif re.match(".*memory.*free.*", metric_key, re.IGNORECASE):
+                if memory_free_key is None:
+                    memory_free_key = metric_key
 
         # Memory usage and limit
         if memory_usage_key and memory_usage_key in metrics:

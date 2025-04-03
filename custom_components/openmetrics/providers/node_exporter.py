@@ -38,7 +38,7 @@ NODE_BOOT_TIME = "node_boot_time_seconds"
 NODE_HWMON_TEMP = "node_hwmon_temp_celsius"
 NODE_CPU_TEMP = "node_thermal_zone_temp"
 NODE_CPU_IDLE_SECONDS = "node_cpu_seconds"
-NODE_MEMORY_FREE = "node_memory_MemFree_bytes"
+NODE_MEMORY_AVAILABLE = "node_memory_MemAvailable_bytes"
 NODE_MEMORY_TOTAL = "node_memory_MemTotal_bytes"
 NODE_MEMORY_SWAP_TOTAL = "node_memory_SwapTotal_bytes"
 NODE_FILESYSTEM_SIZE = "node_filesystem_size_bytes"
@@ -104,7 +104,7 @@ class NodeExporterProvider(MetricsProvider):
             label_filters={"mode": "idle"},
         ),
         MetricFilter(
-            metric_key=NODE_MEMORY_FREE,
+            metric_key=NODE_MEMORY_AVAILABLE,
         ),
         MetricFilter(
             metric_key=NODE_MEMORY_TOTAL,
@@ -143,7 +143,7 @@ class NodeExporterProvider(MetricsProvider):
         NODE_CPU_IDLE_SECONDS: False,
         NODE_CPU_TEMP: False,
         NODE_MEMORY_TOTAL: False,
-        NODE_MEMORY_FREE: False,
+        NODE_MEMORY_AVAILABLE: False,
         NODE_FILESYSTEM_SIZE: False,
         NODE_FILESYSTEM_FREE: False,
         NODE_NETWORK_RECEIVE: False,
@@ -246,7 +246,7 @@ class NodeExporterProvider(MetricsProvider):
         # Add paired metrics after checking both components are present
         if (
             self.found_metrics[NODE_MEMORY_TOTAL]
-            and self.found_metrics[NODE_MEMORY_FREE]
+            and self.found_metrics[NODE_MEMORY_AVAILABLE]
         ):
             self._add_str_to_list_uniquely(METRIC_MEMORY_USAGE_BYTES, available_metrics)
             self._add_str_to_list_uniquely(METRIC_MEMORY_USAGE_PCT, available_metrics)
@@ -387,7 +387,7 @@ class NodeExporterProvider(MetricsProvider):
         memory_total_bytes = metrics.get(NODE_MEMORY_TOTAL)
         if memory_total_bytes is None or memory_total_bytes == 0:
             return None, None
-        memory_free_bytes = metrics.get(NODE_MEMORY_FREE)
+        memory_free_bytes = metrics.get(NODE_MEMORY_AVAILABLE)
         if memory_free_bytes is None:
             return None, None
         # Calculate memory usage
