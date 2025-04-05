@@ -21,12 +21,8 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from custom_components.openmetrics.metrics.data import ResourceInfoData
-
 from .const import (
     DOMAIN,
-    METRIC_CONTAINER_STATUS,
-    METRIC_CONTAINER_UPTIME,
     METRIC_CPU_TEMP,
     METRIC_CPU_USAGE_PCT,
     METRIC_DEVICE_NAME,
@@ -46,6 +42,12 @@ from .const import (
     PROPERTY_MEMORY_SIZE,
     RESOURCE_TYPE_CONTAINER,
     RESOURCE_TYPE_NODE,
+)
+from .metrics.data import ResourceInfoData
+from .providers.node_exporter import (
+    METRIC_VIRTUAL_RESOURCE_STATUS,
+    METRIC_VIRTUAL_RESOURCE_UPTIME,
+    METRIC_VIRTUAL_RESOURCES,
 )
 
 SENSORS = {
@@ -137,22 +139,27 @@ SENSORS = {
         translation_key=METRIC_DEVICE_NAME,
         entity_registry_visible_default=False,
     ),
+    METRIC_VIRTUAL_RESOURCES: SensorEntityDescription(
+        key=METRIC_VIRTUAL_RESOURCES,
+        icon="mdi:docker",
+        translation_key=METRIC_VIRTUAL_RESOURCES,
+    ),
 }
 VIRTUAL_SENSORS = {
-    METRIC_CONTAINER_STATUS: SensorEntityDescription(
-        key=METRIC_CONTAINER_STATUS,
+    METRIC_VIRTUAL_RESOURCE_STATUS: SensorEntityDescription(
+        key=METRIC_VIRTUAL_RESOURCE_STATUS,
         icon="mdi:docker",
-        translation_key=METRIC_CONTAINER_STATUS,
+        translation_key=METRIC_VIRTUAL_RESOURCE_STATUS,
     ),
-    METRIC_CONTAINER_UPTIME: SensorEntityDescription(
-        key=METRIC_CONTAINER_UPTIME,
+    METRIC_VIRTUAL_RESOURCE_UPTIME: SensorEntityDescription(
+        key=METRIC_VIRTUAL_RESOURCE_UPTIME,
         icon="mdi:clock-outline",
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfTime.SECONDS,
         suggested_unit_of_measurement=UnitOfTime.DAYS,
         suggested_display_precision=0,
-        translation_key=METRIC_CONTAINER_UPTIME,
+        translation_key=METRIC_VIRTUAL_RESOURCE_UPTIME,
     ),
 }
 
@@ -324,7 +331,7 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
                 return properties
             if (
                 self.entity_description.key
-                in (METRIC_UPTIME_SECONDS, METRIC_CONTAINER_UPTIME)
+                in (METRIC_UPTIME_SECONDS, METRIC_VIRTUAL_RESOURCE_UPTIME)
                 and self.coordinator.last_start_time is not None
             ):
                 return {PROPERTY_LAST_START_TIME: self.coordinator.last_start_time}

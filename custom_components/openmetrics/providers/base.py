@@ -126,8 +126,8 @@ class MetricsProvider(ABC):
     def process_metrics(self, metrics: dict, update_interval: int) -> dict | None:
         """Process metrics and return sensor metrics."""
         sensor_metrics = {}
-        # Share common metrics between resources
-        self._share_common_metrics(metrics)
+        # Pre-process metrics
+        self._pre_process_metrics(metrics)
         # Calculate resource metrics
         for resource, resource_metrics in metrics.items():
             if resource not in sensor_metrics:
@@ -145,8 +145,8 @@ class MetricsProvider(ABC):
         return sample.value
 
     @abstractmethod
-    def _share_common_metrics(self, metrics: dict):
-        """Share common metrics between resources."""
+    def _pre_process_metrics(self, metrics: dict):
+        """Pre-process metrics."""
         raise NotImplementedError
 
     @abstractmethod

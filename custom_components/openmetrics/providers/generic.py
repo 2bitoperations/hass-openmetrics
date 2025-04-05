@@ -225,8 +225,8 @@ class GenericProvider(MetricsProvider):
             return {cpu: sample.value}
         return sample.value
 
-    def _share_common_metrics(self, metrics: dict):
-        """Share common metrics between resources."""
+    def _pre_process_metrics(self, metrics: dict):
+        """Pre-process metrics."""
         # Check if metrics are available
         if not metrics:
             return

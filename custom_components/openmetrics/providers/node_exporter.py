@@ -3,8 +3,6 @@
 from time import time
 
 from ..const import (
-    METRIC_CONTAINER_STATUS,
-    METRIC_CONTAINER_UPTIME,
     METRIC_CPU_TEMP,
     METRIC_CPU_USAGE_PCT,
     METRIC_DEVICE_NAME,
@@ -62,6 +60,17 @@ NODE_EXPORTER_CPU_CORE_LABEL = "cpu"
 NODE_CONTAINER_RESOURCE_LABEL = "name"
 NODE_CONTAINER_IMAGE_LABEL = "image"
 NODE_CONTAINER_STATE_STATUS_LABEL = "status"
+# Node Exporter textfile collector metrics
+METRIC_VIRTUAL_RESOURCES = "virtual_resources"
+METRIC_VIRTUAL_RESOURCE_STATUS = "virtual_resource_status"
+METRIC_VIRTUAL_RESOURCE_STATUS_CREATED = "virtual_resource_status_created"
+METRIC_VIRTUAL_RESOURCE_STATUS_RUNNING = "virtual_resource_status_running"
+METRIC_VIRTUAL_RESOURCE_STATUS_PAUSED = "virtual_resource_status_paused"
+METRIC_VIRTUAL_RESOURCE_STATUS_RESTARTING = "virtual_resource_status_restarting"
+METRIC_VIRTUAL_RESOURCE_STATUS_REMOVING = "virtual_resource_status_removing"
+METRIC_VIRTUAL_RESOURCE_STATUS_EXITED = "virtual_resource_status_exited"
+METRIC_VIRTUAL_RESOURCE_STATUS_DEAD = "virtual_resource_status_dead"
+METRIC_VIRTUAL_RESOURCE_UPTIME = "virtual_resource_uptime"
 
 PROVIDER_FILTERS = [
     MetricFilter(
@@ -235,11 +244,17 @@ class NodeExporterProvider(MetricsProvider):
                 self._add_str_to_list_uniquely(METRIC_UPTIME_SECONDS, available_metrics)
             elif family.name == NODE_CONTAINER_STATE_STATUS:
                 self._add_str_to_list_uniquely(
-                    METRIC_CONTAINER_STATUS, available_metrics
+                    METRIC_VIRTUAL_RESOURCE_STATUS, available_metrics
+                )
+                self._add_str_to_list_uniquely(
+                    METRIC_VIRTUAL_RESOURCES, available_metrics
                 )
             elif family.name == NODE_CONTAINER_STATE_STARTEDAT:
                 self._add_str_to_list_uniquely(
-                    METRIC_CONTAINER_UPTIME, available_metrics
+                    METRIC_VIRTUAL_RESOURCE_UPTIME, available_metrics
+                )
+                self._add_str_to_list_uniquely(
+                    METRIC_VIRTUAL_RESOURCES, available_metrics
                 )
         # Add name metric
         self._add_str_to_list_uniquely(METRIC_DEVICE_NAME, available_metrics)
@@ -279,10 +294,13 @@ class NodeExporterProvider(MetricsProvider):
             return {status: sample.value}
         return sample.value
 
-    def _share_common_metrics(self, metrics: dict):
-        """Share common metrics between resources."""
-        # Not needed for node exporter
-        return
+    def _pre_process_metrics(self, metrics: dict):
+        """Pre-process metrics."""
+        # Add number of containers to main resource metrics
+        for resource, resource_metrics in metrics.items():
+            if resource == self.resource_name:
+                resource_metrics[METRIC_VIRTUAL_RESOURCES] = len(metrics) - 1
+                break
 
     def _calculate_resource_metrics(
         self, resource: str, metrics: dict, update_interval: int
@@ -295,6 +313,11 @@ class NodeExporterProvider(MetricsProvider):
             # CPU temperature
             if NODE_CPU_TEMP in metrics and sensor_metrics:
                 sensor_metrics[METRIC_CPU_TEMP] = metrics[NODE_CPU_TEMP]
+            # Virtual resources
+            if METRIC_VIRTUAL_RESOURCES in metrics and sensor_metrics:
+                sensor_metrics[METRIC_VIRTUAL_RESOURCES] = metrics[
+                    METRIC_VIRTUAL_RESOURCES
+                ]
         else:
             # Process virtual resource metrics
             sensor_metrics = self._calculate_virtual_resource_metrics(resource, metrics)
@@ -308,15 +331,17 @@ class NodeExporterProvider(MetricsProvider):
         sensor_metrics = {}
         # Calculate container status
         if NODE_CONTAINER_STATE_STATUS in metrics:
-            sensor_metrics[METRIC_CONTAINER_STATUS] = self._calculate_container_status(
-                resource, metrics[NODE_CONTAINER_STATE_STATUS]
+            sensor_metrics[METRIC_VIRTUAL_RESOURCE_STATUS] = (
+                self._calculate_virtual_resource_status(
+                    resource, metrics[NODE_CONTAINER_STATE_STATUS]
+                )
             )
         # Calculate container uptime
         if NODE_CONTAINER_STATE_STARTEDAT in metrics:
-            uptime_seconds, start_time = self._calculate_container_uptime(
+            uptime_seconds, start_time = self._calculate_virtual_resource_uptime(
                 resource, metrics[NODE_CONTAINER_STATE_STARTEDAT]
             )
-            sensor_metrics[METRIC_CONTAINER_UPTIME] = uptime_seconds
+            sensor_metrics[METRIC_VIRTUAL_RESOURCE_UPTIME] = uptime_seconds
         return sensor_metrics
 
     def _calculate_cpu_usage(
@@ -511,7 +536,7 @@ class NodeExporterProvider(MetricsProvider):
         # Return values
         return uptime_seconds, start_time
 
-    def _calculate_container_status(
+    def _calculate_virtual_resource_status(
         self, resource: str, container_states: dict
     ) -> str | None:
         """Get container state as string from state values."""
@@ -523,7 +548,7 @@ class NodeExporterProvider(MetricsProvider):
                 return status
         return "unknown"
 
-    def _calculate_container_uptime(
+    def _calculate_virtual_resource_uptime(
         self, resource: str, start_time: int
     ) -> tuple[int | None, int | None]:
         """Calculate uptime."""

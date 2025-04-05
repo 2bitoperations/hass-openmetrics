@@ -96,10 +96,10 @@
                     }
                 }
             },
-            "container_status": {
+            "virtual_resource_status": {
                 "name": "Status"
             },
-            "container_uptime": {
+            "virtual_resource_uptime": {
                 "name": "Laufzeit",
                 "state_attributes": {
                     "last_start_time": {
@@ -120,6 +120,9 @@
                         "name": "Software"
                     }
                 }
+            },
+            "virtual_resources": {
+                "name": "Virtuelle Ressourcen"
             }
         }
     },
@@ -157,8 +160,9 @@
                 "network_transmit_bytes": "Datenausgang",
                 "uptime_seconds": "Laufzeit",
                 "device_name": "Name",
-                "container_status": "Container-Status",
-                "container_uptime": "Container-Laufzeit"
+                "virtual_resource_status": "Status der virtuellen Ressource",
+                "virtual_resource_uptime": "Laufzeit der virtuellen Ressource",
+                "virtual_resources": "Virtuelle Ressourcen"
             }
         }
     }
