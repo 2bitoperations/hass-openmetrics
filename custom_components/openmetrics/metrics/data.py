@@ -24,6 +24,8 @@ class ResourceInfoData:
     serial_number: str | None = None
     is_virtual: bool = False
     via_resource: str | None = None
+    disk_size: str | None = None
+    network_speed: dict | None = None
 
 
 @dataclass

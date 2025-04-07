@@ -40,6 +40,7 @@ from .const import (
     PROPERTY_DISK_SIZE,
     PROPERTY_LAST_START_TIME,
     PROPERTY_MEMORY_SIZE,
+    PROPERTY_NETWORK_SPEED,
     RESOURCE_TYPE_CONTAINER,
     RESOURCE_TYPE_NODE,
 )
@@ -295,8 +296,9 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return the state attributes."""
-        # Set the last start time attribute
+        # Set resource related attributes
         if isinstance(self.coordinator, get_coordinator_class()):
+            # Set device info attributes
             if self.entity_description.key == METRIC_DEVICE_NAME:
                 properties = {}
                 # Model
@@ -329,27 +331,49 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
                     )
                 # Return the properties
                 return properties
-            if (
-                self.entity_description.key
-                in (METRIC_UPTIME_SECONDS, METRIC_VIRTUAL_RESOURCE_UPTIME)
-                and self.coordinator.last_start_time is not None
+
+            # Get the resource data
+            resource = self.device_info.get("name")
+            if resource and self.coordinator.data:
+                resource_data = self.coordinator.data.get(resource, {})
+                if not resource_data:
+                    return None
+            else:
+                return None
+
+            # Set the last start time attribute
+            if self.entity_description.key in (
+                METRIC_UPTIME_SECONDS,
+                METRIC_VIRTUAL_RESOURCE_UPTIME,
             ):
-                return {PROPERTY_LAST_START_TIME: self.coordinator.last_start_time}
-            if (
-                self.entity_description.key == METRIC_CPU_USAGE_PCT
-                and self.coordinator.cpu_cores is not None
+                return {
+                    PROPERTY_LAST_START_TIME: resource_data.get(
+                        PROPERTY_LAST_START_TIME
+                    )
+                }
+            # Set the CPU cores attribute
+            if self.entity_description.key == METRIC_CPU_USAGE_PCT:
+                return {PROPERTY_CPU_CORES: resource_data.get(PROPERTY_CPU_CORES)}
+            # Set the memory size attribute
+            if self.entity_description.key in (
+                METRIC_MEMORY_USAGE_BYTES,
+                METRIC_MEMORY_USAGE_PCT,
             ):
-                return {PROPERTY_CPU_CORES: self.coordinator.cpu_cores}
-            if (
-                self.entity_description.key
-                in (METRIC_MEMORY_USAGE_BYTES, METRIC_MEMORY_USAGE_PCT)
-            ) and self.coordinator.memory_size is not None:
-                return {PROPERTY_MEMORY_SIZE: self.coordinator.memory_size}
-            if (
-                self.entity_description.key
-                in (METRIC_DISK_USAGE_BYTES, METRIC_DISK_USAGE_PCT)
-            ) and self.coordinator.disk_size is not None:
-                return {PROPERTY_DISK_SIZE: self.coordinator.disk_size}
+                return {PROPERTY_MEMORY_SIZE: resource_data.get(PROPERTY_MEMORY_SIZE)}
+            # Set the disk size attribute
+            if self.entity_description.key in (
+                METRIC_DISK_USAGE_BYTES,
+                METRIC_DISK_USAGE_PCT,
+            ):
+                return {PROPERTY_DISK_SIZE: resource_data.get(PROPERTY_DISK_SIZE)}
+            # Set the network attribute
+            if self.entity_description.key in (
+                METRIC_NETWORK_RECEIVE_BYTES,
+                METRIC_NETWORK_TRANSMIT_BYTES,
+            ):
+                network_speed = resource_data.get(PROPERTY_NETWORK_SPEED)
+                if network_speed:
+                    return dict(network_speed.items())
             return None
 
     def __extract_image_name(self, image_string: str) -> str:

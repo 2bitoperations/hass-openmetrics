@@ -1,6 +1,11 @@
 """Cadvisor metrics provider."""
 
+from datetime import datetime
+from math import floor
 from time import time
+from typing import Any
+
+from homeassistant.util import dt as dt_util
 
 from ..const import (
     METRIC_CPU_USAGE_PCT,
@@ -12,12 +17,17 @@ from ..const import (
     METRIC_NETWORK_RECEIVE_BYTES,
     METRIC_NETWORK_TRANSMIT_BYTES,
     METRIC_UPTIME_SECONDS,
+    PROPERTY_CPU_CORES,
+    PROPERTY_DISK_SIZE,
+    PROPERTY_LAST_START_TIME,
+    PROPERTY_MEMORY_SIZE,
     PROVIDER_NAME_CADVISOR,
     RESOURCE_TYPE_CONTAINER,
 )
 from ..lib.metrics_core import Metric
 from ..metrics import MetricFilter
 from ..metrics.data import ProviderInfoData, ResourceInfoData
+from ..unit_converters import convert_bytes, get_appropriate_unit
 from .base import MetricsProvider
 
 # Metrics
@@ -256,12 +266,16 @@ class CadvisorProvider(MetricsProvider):
             metrics.pop(self.RESOURCE_NAME)
 
     def _calculate_cpu_usage(
-        self, resource: str, metrics: dict, update_interval: int
-    ) -> tuple[float | None, dict[int, float] | None]:
+        self,
+        resource: str,
+        metrics: dict,
+        update_interval: int,
+    ) -> dict[str, Any]:
         """Calculate CPU usage (pct, dict)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
+            return sensor_metrics
         # Initialize variables
         prev_value: float | None = None
         current_value: float | None = None
@@ -282,7 +296,7 @@ class CadvisorProvider(MetricsProvider):
             self._previous_metrics[resource][CONTAINER_CPU_USAGE] = current_value
             # Calculate CPU usage
             if prev_value is not None and current_value is not None:
-                self.cpu_cores = metrics.get(MACHINE_CPU_CORES, 1)
+                # Calculate CPU usage
                 cpu_seconds_delta = (
                     current_value - prev_value
                 )  # max = update interval * cores
@@ -291,23 +305,33 @@ class CadvisorProvider(MetricsProvider):
                     cpu_usage_pct = 100
                 elif cpu_usage_pct and cpu_usage_pct < 0:
                     cpu_usage_pct = 0
-                if cpu_usage_pct > 0 and self.cpu_cores:
-                    cpu_usage_pct_core = cpu_usage_pct / self.cpu_cores
+                # Set CPU usage
+                sensor_metrics[METRIC_CPU_USAGE_PCT] = cpu_usage_pct
+                # Get CPU cores
+                cpu_cores = metrics.get(MACHINE_CPU_CORES, 1)
+                # Set CPU cores
+                sensor_metrics[PROPERTY_CPU_CORES] = cpu_cores
+                # Calculate CPU usage per core
+                if cpu_usage_pct > 0 and cpu_cores:
+                    cpu_usage_pct_core = cpu_usage_pct / cpu_cores
                 else:
                     cpu_usage_pct_core = cpu_usage_pct
-                if self.cpu_cores:
-                    for cpu_core in range(int(self.cpu_cores)):
+                if cpu_cores:
+                    for cpu_core in range(int(cpu_cores)):
                         cpu_core_usage[cpu_core] = cpu_usage_pct_core
         # Return values
-        return cpu_usage_pct, cpu_core_usage
+        return sensor_metrics
 
     def _calculate_memory_usage(
-        self, resource: str, metrics: dict
-    ) -> tuple[int | None, float | None]:
+        self,
+        resource: str,
+        metrics: dict,
+    ) -> dict[str, Any]:
         """Calculate memory usage (used bytes, used pct)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
+            return sensor_metrics
         # Initialize variables
         memory_total_bytes: int | None = None
         memory_usage_bytes: int | None = None
@@ -322,43 +346,55 @@ class CadvisorProvider(MetricsProvider):
         # Calculate percentage if we have both values
         if memory_total_bytes and memory_usage_bytes and memory_total_bytes > 0:
             memory_usage_pct = memory_usage_bytes / memory_total_bytes * 100
+        # Set memory usage
+        sensor_metrics[METRIC_MEMORY_USAGE_BYTES] = memory_usage_bytes
+        sensor_metrics[METRIC_MEMORY_USAGE_PCT] = memory_usage_pct
         # Set memory size
         if memory_total_bytes:
-            self.memory_size = memory_total_bytes
+            # Convert memory size to appropriate unit
+            target_unit = get_appropriate_unit(memory_total_bytes)
+            sensor_metrics[PROPERTY_MEMORY_SIZE] = (
+                f"{floor(convert_bytes(memory_total_bytes, target_unit))} {target_unit}"
+            )
         # Return values
-        return memory_usage_bytes, memory_usage_pct
+        return sensor_metrics
 
-    def _calculate_disk_usage(
-        self, resource: str, metrics: dict
-    ) -> tuple[int | None, float | None]:
+    def _calculate_disk_usage(self, resource: str, metrics: dict) -> dict[str, Any]:
         """Calculate disk usage (used bytes, used pct)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
+            return sensor_metrics
         # Initialize variables
         disk_total_bytes: int | None = None
         disk_usage_bytes: int | None = None
-        disk_usage_pct: float | None = None
         # Get values
         if CONTAINER_FS_LIMIT in metrics:
             disk_total_bytes = metrics[CONTAINER_FS_LIMIT]
             disk_usage_bytes = metrics[CONTAINER_FS_USAGE]
         # Calculate disk usage
         if disk_total_bytes is not None and disk_usage_bytes is not None:
-            disk_usage_pct = disk_usage_bytes / disk_total_bytes * 100
+            sensor_metrics[METRIC_DISK_USAGE_BYTES] = disk_usage_bytes
+            sensor_metrics[METRIC_DISK_USAGE_PCT] = (
+                disk_usage_bytes / disk_total_bytes * 100
+            )
         # Set disk size
         if disk_total_bytes:
-            self.disk_size = disk_total_bytes
+            target_unit = get_appropriate_unit(disk_total_bytes)
+            sensor_metrics[PROPERTY_DISK_SIZE] = (
+                f"{floor(convert_bytes(disk_total_bytes, target_unit))} {target_unit}"
+            )
         # Return values
-        return disk_usage_bytes, disk_usage_pct
+        return sensor_metrics
 
     def _calculate_network_io(
         self, resource: str, metrics: dict, update_interval: int
-    ) -> tuple[float | None, float | None]:
+    ) -> dict[str, Any]:
         """Calculate network IO (receive bytes, transmit bytes)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
+            return sensor_metrics
         # Check if update interval is valid
         if update_interval is None or update_interval <= 0:
             raise ValueError("Update interval must be positive")
@@ -367,8 +403,6 @@ class CadvisorProvider(MetricsProvider):
         current_value_receive: float | None = None
         prev_value_transmit: float | None = None
         current_value_transmit: float | None = None
-        network_receive_bytes_per_second: float | None = None
-        network_transmit_bytes_per_second: float | None = None
         # Calculate network receive
         if CONTAINER_NETWORK_RECEIVE in metrics:
             # Get current value
@@ -387,7 +421,7 @@ class CadvisorProvider(MetricsProvider):
             )
             # Calculate network receive bytes per second
             if prev_value_receive is not None and current_value_receive is not None:
-                network_receive_bytes_per_second = (
+                sensor_metrics[METRIC_NETWORK_RECEIVE_BYTES] = (
                     current_value_receive - prev_value_receive
                 ) / update_interval
         # Calculate network transmit
@@ -408,27 +442,27 @@ class CadvisorProvider(MetricsProvider):
             )
             # Calculate network transmit bytes per second
             if prev_value_transmit is not None and current_value_transmit is not None:
-                network_transmit_bytes_per_second = (
+                sensor_metrics[METRIC_NETWORK_TRANSMIT_BYTES] = (
                     current_value_transmit - prev_value_transmit
                 ) / update_interval
-        # Return values
-        return (network_receive_bytes_per_second, network_transmit_bytes_per_second)
 
-    def _calculate_uptime(
-        self, resource: str, metrics: dict
-    ) -> tuple[int | None, int | None]:
+        # Return values
+        return sensor_metrics
+
+    def _calculate_uptime(self, resource: str, metrics: dict) -> dict[str, Any]:
         """Calculate uptime."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
-        # Initialize variables
-        start_time: int | None = None
-        uptime_seconds: int | None = None
+            return sensor_metrics
         # Get values
         if CONTAINER_START_TIME in metrics:
-            start_time = metrics[CONTAINER_START_TIME]
+            start_time = int(metrics[CONTAINER_START_TIME])
+            sensor_metrics[PROPERTY_LAST_START_TIME] = datetime.fromtimestamp(
+                float(start_time), dt_util.UTC
+            )
         # Calculate uptime
         if start_time is not None:
-            uptime_seconds = int(time()) - start_time
+            sensor_metrics[METRIC_UPTIME_SECONDS] = int(time()) - start_time
         # Return values
-        return uptime_seconds, start_time
+        return sensor_metrics

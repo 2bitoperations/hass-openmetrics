@@ -1,7 +1,12 @@
 """Generic metrics provider."""
 
 import re
+from datetime import datetime
+from math import floor
 from time import time
+from typing import Any
+
+from homeassistant.util import dt as dt_util
 
 from ..const import (
     METRIC_CPU_USAGE_PCT,
@@ -12,6 +17,10 @@ from ..const import (
     METRIC_NETWORK_RECEIVE_BYTES,
     METRIC_NETWORK_TRANSMIT_BYTES,
     METRIC_UPTIME_SECONDS,
+    PROPERTY_CPU_CORES,
+    PROPERTY_DISK_SIZE,
+    PROPERTY_LAST_START_TIME,
+    PROPERTY_MEMORY_SIZE,
     PROVIDER_NAME_GENERIC,
     RESOURCE_TYPE_GENERIC,
 )
@@ -20,8 +29,11 @@ from ..lib.samples import Sample
 from ..metrics.data import ProviderInfoData, ResourceInfoData
 from ..metrics.filter import MetricFilter
 from ..providers.base import MetricsProvider
+from ..unit_converters import convert_bytes, get_appropriate_unit
 from .cadvisor import PROVIDER_FILTERS as CADVISOR_PROVIDER_FILTERS
-from .node_exporter import PROVIDER_FILTERS as NODE_EXPORTER_PROVIDER_FILTERS
+from .node_exporter import (
+    PROVIDER_FILTERS as NODE_EXPORTER_PROVIDER_FILTERS,
+)
 
 
 class GenericProvider(MetricsProvider):
@@ -246,12 +258,12 @@ class GenericProvider(MetricsProvider):
 
     def _calculate_cpu_usage(
         self, resource: str, metrics: dict, update_interval: int
-    ) -> tuple[float | None, dict[int, float] | None]:
+    ) -> dict[str, Any]:
         """Calculate CPU usage (pct, dict)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
-
+            return sensor_metrics
         # Initialize variables
         prev_value = None
         current_value = None
@@ -260,18 +272,16 @@ class GenericProvider(MetricsProvider):
         cpu_cores_key = None
         cpu_seconds_key = None
         cpu_core_usage = {}
-
+        # Get CPU cores and CPU seconds keys
         for metric_key in metrics:
             if re.match(self.CPU_SECONDS_REGEX, metric_key, re.IGNORECASE):
                 cpu_seconds_key = metric_key
             if re.match(self.CPU_CORES_REGEX, metric_key, re.IGNORECASE):
                 cpu_cores_key = metric_key
-
         # Calculate CPU usage
         if cpu_seconds_key and cpu_seconds_key in metrics:
             cpu_usage_metric = metrics[cpu_seconds_key]
             cpu_usage_total_pct = None
-
             for cpu in cpu_usage_metric:
                 # Get current value
                 current_value = cpu_usage_metric[cpu]
@@ -318,22 +328,23 @@ class GenericProvider(MetricsProvider):
                         cpu_usage_total_pct += (
                             cpu_core_usage_pct  # max = 100% * cpu cores
                         )
-
             # Calculate total CPU usage
             if cpu_usage_total_pct is not None:
-                self.cpu_cores = len(metrics[cpu_seconds_key])
-                cpu_usage_pct = cpu_usage_total_pct / self.cpu_cores
+                # Set CPU cores
+                cpu_cores = len(metrics[cpu_seconds_key])
+                sensor_metrics[PROPERTY_CPU_CORES] = cpu_cores
+                # Set CPU usage
+                cpu_usage_pct = cpu_usage_total_pct / cpu_cores
+                sensor_metrics[METRIC_CPU_USAGE_PCT] = cpu_usage_pct
+        # return (cpu_usage_pct, cpu_core_usage)
+        return sensor_metrics
 
-        return (cpu_usage_pct, cpu_core_usage)
-
-    def _calculate_memory_usage(
-        self, resource: str, metrics: dict
-    ) -> tuple[int | None, float | None]:
+    def _calculate_memory_usage(self, resource: str, metrics: dict) -> dict[str, Any]:
         """Calculate memory usage (used bytes, used pct)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
-
+            return sensor_metrics
         # Initialize variables
         memory_total_bytes = None
         memory_free_bytes = None
@@ -344,7 +355,6 @@ class GenericProvider(MetricsProvider):
         memory_total_key = None
         memory_swap_key = None
         memory_free_key = None
-
         # Find relevant memory metric keys
         for metric_key in metrics:
             if re.match(".*memory.*limit.*", metric_key, re.IGNORECASE):
@@ -360,17 +370,14 @@ class GenericProvider(MetricsProvider):
             elif re.match(".*memory.*free.*", metric_key, re.IGNORECASE):
                 if memory_free_key is None:
                     memory_free_key = metric_key
-
         # Memory usage and limit
         if memory_usage_key and memory_usage_key in metrics:
             memory_usage_bytes = metrics[memory_usage_key]
-
             # Get total memory, preferring container limit if available
             if memory_limit_key and memory_limit_key in metrics:
                 memory_total_bytes = metrics[memory_limit_key]
             elif memory_total_key and memory_total_key in metrics:
                 memory_total_bytes = metrics[memory_total_key]
-
         # Total and free memory
         elif (
             memory_total_key
@@ -383,7 +390,7 @@ class GenericProvider(MetricsProvider):
 
             if memory_total_bytes is not None and memory_free_bytes is not None:
                 memory_usage_bytes = memory_total_bytes - memory_free_bytes
-
+                sensor_metrics[METRIC_MEMORY_USAGE_BYTES] = memory_usage_bytes
         # Calculate memory usage
         if (
             memory_total_bytes
@@ -393,25 +400,28 @@ class GenericProvider(MetricsProvider):
         ):
             memory_usage_pct = memory_usage_bytes / memory_total_bytes * 100
             memory_usage_pct = min(memory_usage_pct, 100)
-
+            sensor_metrics[METRIC_MEMORY_USAGE_PCT] = memory_usage_pct
         # Set memory size
         if memory_total_bytes:
-            self.memory_size = memory_total_bytes
+            memory_size = memory_total_bytes
         if memory_swap_key and memory_swap_key in metrics:
             memory_swap_size = metrics[memory_swap_key]
-            self.memory_size += memory_swap_size
-
+            memory_size += memory_swap_size
+        if memory_size:
+            # Convert memory size to appropriate unit
+            target_unit = get_appropriate_unit(memory_size)
+            sensor_metrics[PROPERTY_MEMORY_SIZE] = (
+                f"{floor(convert_bytes(memory_size, target_unit))} {target_unit}"
+            )
         # Return values
-        return memory_usage_bytes, memory_usage_pct
+        return sensor_metrics
 
-    def _calculate_disk_usage(
-        self, resource: str, metrics: dict
-    ) -> tuple[int | None, float | None]:
+    def _calculate_disk_usage(self, resource: str, metrics: dict) -> dict[str, Any]:
         """Calculate disk usage (used bytes, used pct)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
-
+            return sensor_metrics
         # Initialize variables
         disk_total_bytes = None
         disk_free_bytes = None
@@ -421,7 +431,6 @@ class GenericProvider(MetricsProvider):
         disk_usage_key = None
         disk_size_key = None
         disk_free_key = None
-
         # Find relevant disk metric keys
         for metric_key in metrics:
             if re.match(".*(?:fs|filesystem).*limit.*", metric_key, re.IGNORECASE):
@@ -432,7 +441,6 @@ class GenericProvider(MetricsProvider):
                 disk_size_key = metric_key
             elif re.match(".*(?:fs|filesystem).*free.*", metric_key, re.IGNORECASE):
                 disk_free_key = metric_key
-
         # Direct disk usage and limit
         if (
             disk_usage_key
@@ -451,10 +459,9 @@ class GenericProvider(MetricsProvider):
         ):
             disk_total_bytes = metrics[disk_size_key]
             disk_free_bytes = metrics[disk_free_key]
-
             if disk_total_bytes is not None and disk_free_bytes is not None:
                 disk_usage_bytes = disk_total_bytes - disk_free_bytes
-
+                sensor_metrics[METRIC_DISK_USAGE_BYTES] = disk_usage_bytes
         # Common calculation for disk usage percentage
         if (
             disk_total_bytes is not None
@@ -463,25 +470,27 @@ class GenericProvider(MetricsProvider):
         ):
             disk_usage_pct = disk_usage_bytes / disk_total_bytes * 100
             disk_usage_pct = min(disk_usage_pct, 100)
-
+            sensor_metrics[METRIC_DISK_USAGE_PCT] = disk_usage_pct
         # Set disk size
         if disk_total_bytes:
-            self.disk_size = disk_total_bytes
-
+            target_unit = get_appropriate_unit(disk_total_bytes)
+            sensor_metrics[PROPERTY_DISK_SIZE] = (
+                f"{floor(convert_bytes(disk_total_bytes, target_unit))} {target_unit}"
+            )
         # Return values
-        return disk_usage_bytes, disk_usage_pct
+        return sensor_metrics
 
     def _calculate_network_io(
         self, resource: str, metrics: dict, update_interval: int
-    ) -> tuple[float | None, float | None]:
+    ) -> dict[str, Any]:
         """Calculate network IO (receive bytes, transmit bytes)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
+            return sensor_metrics
         # Check if update interval is valid
         if update_interval is None or update_interval <= 0:
             raise ValueError("Update interval must be positive")
-
         # Initialize variables
         prev_value_receive = None
         current_value_receive = None
@@ -491,14 +500,12 @@ class GenericProvider(MetricsProvider):
         network_transmit_bytes_per_second = None
         network_receive_key = None
         network_transmit_key = None
-
         # Find relevant network metric keys
         for metric_key in metrics:
             if re.match(".*network.*receive.*", metric_key, re.IGNORECASE):
                 network_receive_key = metric_key
             elif re.match(".*network.*transmit.*", metric_key, re.IGNORECASE):
                 network_transmit_key = metric_key
-
         # Calculate network receive
         if network_receive_key and network_receive_key in metrics:
             # Get current value
@@ -520,10 +527,9 @@ class GenericProvider(MetricsProvider):
                 network_receive_bytes_per_second = (
                     current_value_receive - prev_value_receive
                 ) / update_interval
-                network_receive_bytes_per_second = max(
+                sensor_metrics[METRIC_NETWORK_RECEIVE_BYTES] = max(
                     network_receive_bytes_per_second, 0
                 )
-
         # Calculate network transmit
         if network_transmit_key and network_transmit_key in metrics:
             # Get current value
@@ -545,44 +551,38 @@ class GenericProvider(MetricsProvider):
                 network_transmit_bytes_per_second = (
                     current_value_transmit - prev_value_transmit
                 ) / update_interval
-                network_transmit_bytes_per_second = max(
+                sensor_metrics[METRIC_NETWORK_TRANSMIT_BYTES] = max(
                     network_transmit_bytes_per_second, 0
                 )
-
         # Return values
-        return network_receive_bytes_per_second, network_transmit_bytes_per_second
+        return sensor_metrics
 
-    def _calculate_uptime(
-        self, resource: str, metrics: dict
-    ) -> tuple[int | None, int | None]:
+    def _calculate_uptime(self, resource: str, metrics: dict) -> dict[str, Any]:
         """Calculate uptime."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
-
+            return sensor_metrics
         # Initialize variables
         start_time = None
-        uptime_seconds = None
         start_time_key = None
         boot_time_key = None
-
         # Find relevant uptime metric keys
         for metric_key in metrics:
             if re.match(".*start_time.*", metric_key, re.IGNORECASE):
                 start_time_key = metric_key
             elif re.match(".*boot_time.*", metric_key, re.IGNORECASE):
                 boot_time_key = metric_key
-
         # Get start time (cAdvisor style or Node Exporter style)
         if start_time_key and start_time_key in metrics:
             start_time = metrics[start_time_key]
         elif boot_time_key and boot_time_key in metrics:
             start_time = metrics[boot_time_key]
-
         # Calculate uptime
         if start_time is not None:
-            uptime_seconds = int(time()) - start_time
-            uptime_seconds = max(uptime_seconds, 0)
-
+            sensor_metrics[PROPERTY_LAST_START_TIME] = datetime.fromtimestamp(
+                float(start_time), dt_util.UTC
+            )
+            sensor_metrics[METRIC_UPTIME_SECONDS] = max(int(time()) - start_time, 0)
         # Return values
-        return uptime_seconds, start_time
+        return sensor_metrics

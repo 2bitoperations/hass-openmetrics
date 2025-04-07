@@ -1,6 +1,12 @@
 """Node Exporter provider."""
 
+from datetime import datetime
+from math import floor
 from time import time
+from typing import Any
+
+from homeassistant.const import UnitOfDataRate, UnitOfInformation
+from homeassistant.util import dt as dt_util
 
 from ..const import (
     METRIC_CPU_TEMP,
@@ -13,6 +19,10 @@ from ..const import (
     METRIC_NETWORK_RECEIVE_BYTES,
     METRIC_NETWORK_TRANSMIT_BYTES,
     METRIC_UPTIME_SECONDS,
+    PROPERTY_CPU_CORES,
+    PROPERTY_DISK_SIZE,
+    PROPERTY_LAST_START_TIME,
+    PROPERTY_MEMORY_SIZE,
     PROVIDER_NAME_NODE_EXPORTER,
     RESOURCE_TYPE_CONTAINER,
     RESOURCE_TYPE_NODE,
@@ -23,6 +33,12 @@ from ..metrics import MetricFilter
 from ..metrics.data import (
     ProviderInfoData,
     ResourceInfoData,
+)
+from ..unit_converters import (
+    convert_bytes,
+    convert_data_rate,
+    convert_data_size,
+    get_appropriate_unit,
 )
 from .base import MetricsProvider
 
@@ -56,6 +72,8 @@ NODE_EXPORTER_OS_NAME_LABEL = "name"
 NODE_EXPORTER_OS_VERSION_LABEL = "version"
 NODE_EXPORTER_DEVICE_MODEL_LABEL = "model"
 NODE_EXPORTER_DEVICE_SERIAL_LABEL = "serial"
+NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL = "disk_size"
+NODE_EXPORTER_DEVICE_NETWORK_ETH0_SPEED_LABEL = "speed_eth0"
 NODE_EXPORTER_CPU_CORE_LABEL = "cpu"
 NODE_CONTAINER_RESOURCE_LABEL = "name"
 NODE_CONTAINER_IMAGE_LABEL = "image"
@@ -210,14 +228,32 @@ class NodeExporterProvider(MetricsProvider):
         # Get model and serial number
         elif family.name == NODE_DEVICE_INFO:
             for sample in family.samples:
+                # Get model
                 if sample.labels.get(NODE_EXPORTER_DEVICE_MODEL_LABEL):
                     resource_info.model = sample.labels[
                         NODE_EXPORTER_DEVICE_MODEL_LABEL
                     ]
+                # Get serial number
                 if sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL):
                     resource_info.serial_number = sample.labels[
                         NODE_EXPORTER_DEVICE_SERIAL_LABEL
                     ]
+                # Get disk size
+                if sample.labels.get(NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL):
+                    disk_size = sample.labels[NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL]
+                    if disk_size:
+                        target_unit = UnitOfInformation.GIGABYTES
+                        resource_info.disk_size = f"{round(convert_data_size(disk_size, target_unit), 2)} {target_unit}"
+                # Get network speed
+                if sample.labels.get(NODE_EXPORTER_DEVICE_NETWORK_ETH0_SPEED_LABEL):
+                    network_speed = sample.labels[
+                        NODE_EXPORTER_DEVICE_NETWORK_ETH0_SPEED_LABEL
+                    ]
+                    if network_speed:
+                        target_unit = UnitOfDataRate.MEGABITS_PER_SECOND
+                        resource_info.network_speed = {
+                            "eth0": f"{round(convert_data_rate(network_speed, target_unit), 2)} {target_unit}"
+                        }
         # Get virtual resource info
         elif family.name in self.__virtual_resource_metric_keys:
             for sample in family.samples:
@@ -338,19 +374,24 @@ class NodeExporterProvider(MetricsProvider):
             )
         # Calculate container uptime
         if NODE_CONTAINER_STATE_STARTEDAT in metrics:
-            uptime_seconds, start_time = self._calculate_virtual_resource_uptime(
-                resource, metrics[NODE_CONTAINER_STATE_STARTEDAT]
+            sensor_metrics.update(
+                self._calculate_virtual_resource_uptime(
+                    resource, metrics[NODE_CONTAINER_STATE_STARTEDAT]
+                )
             )
-            sensor_metrics[METRIC_VIRTUAL_RESOURCE_UPTIME] = uptime_seconds
         return sensor_metrics
 
     def _calculate_cpu_usage(
-        self, resource: str, metrics: dict, update_interval: int
-    ) -> tuple[float | None, dict[int, float] | None]:
+        self,
+        resource: str,
+        metrics: dict,
+        update_interval: int,
+    ) -> dict[str, Any]:
         """Calculate CPU usage (pct, dict)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
+            return sensor_metrics
         # Initialize variables
         prev_value: float | None = None
         current_value: float | None = None
@@ -358,7 +399,6 @@ class NodeExporterProvider(MetricsProvider):
         cpu_core_usage: dict = {}
         # Calculate CPU usage
         if NODE_CPU_IDLE_SECONDS in metrics:
-            cpu_usage_pct = None
             cpu_usage_total_pct = None
             for cpu in metrics[NODE_CPU_IDLE_SECONDS]:
                 # Get current value
@@ -396,47 +436,60 @@ class NodeExporterProvider(MetricsProvider):
                     cpu_usage_total_pct += cpu_core_usage_pct  # max = 100% * cpu cores
             # Calculate total CPU usage
             if cpu_usage_total_pct is not None:
-                self.cpu_cores = len(metrics[NODE_CPU_IDLE_SECONDS])
-                cpu_usage_pct = cpu_usage_total_pct / self.cpu_cores
+                # Set CPU cores
+                cpu_cores = len(metrics[NODE_CPU_IDLE_SECONDS])
+                sensor_metrics[PROPERTY_CPU_CORES] = cpu_cores
+                # Set CPU usage
+                cpu_usage_pct = cpu_usage_total_pct / cpu_cores
+                sensor_metrics[METRIC_CPU_USAGE_PCT] = cpu_usage_pct
         # Return values
-        return cpu_usage_pct, cpu_core_usage
+        return sensor_metrics
 
     def _calculate_memory_usage(
-        self, resource: str, metrics: dict[str, int]
-    ) -> tuple[int | None, float | None]:
+        self,
+        resource: str,
+        metrics: dict[str, int],
+    ) -> dict[str, Any]:
         """Calculate memory usage (used bytes, used pct)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
+            return sensor_metrics
         # Get values
         memory_total_bytes = metrics.get(NODE_MEMORY_TOTAL)
         if memory_total_bytes is None or memory_total_bytes == 0:
-            return None, None
+            return sensor_metrics
         memory_free_bytes = metrics.get(NODE_MEMORY_AVAILABLE)
         if memory_free_bytes is None:
-            return None, None
+            return sensor_metrics
         # Calculate memory usage
         memory_usage_bytes = memory_total_bytes - memory_free_bytes
         memory_usage_pct = (memory_usage_bytes / memory_total_bytes) * 100
+        # Set memory usage
+        sensor_metrics[METRIC_MEMORY_USAGE_BYTES] = memory_usage_bytes
+        sensor_metrics[METRIC_MEMORY_USAGE_PCT] = memory_usage_pct
         # Set memory size
         if NODE_MEMORY_TOTAL in metrics:
-            self.memory_size: int = metrics[NODE_MEMORY_TOTAL]
-        if self.memory_size and NODE_MEMORY_SWAP_TOTAL in metrics:
-            self.memory_size += int(metrics[NODE_MEMORY_SWAP_TOTAL])
+            memory_size_bytes: int = metrics[NODE_MEMORY_TOTAL]
+        if memory_size_bytes and NODE_MEMORY_SWAP_TOTAL in metrics:
+            memory_size_bytes += int(metrics[NODE_MEMORY_SWAP_TOTAL])
+            # Convert memory size to appropriate unit
+            target_unit = get_appropriate_unit(memory_size_bytes)
+            sensor_metrics[PROPERTY_MEMORY_SIZE] = (
+                f"{floor(convert_bytes(memory_size_bytes, target_unit))} {target_unit}"
+            )
         # Return values
-        return memory_usage_bytes, memory_usage_pct
+        return sensor_metrics
 
-    def _calculate_disk_usage(
-        self, resource, metrics
-    ) -> tuple[int | None, float | None]:
+    def _calculate_disk_usage(self, resource, metrics) -> dict[str, Any]:
         """Calculate disk usage (used bytes, used pct)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
+            return sensor_metrics
         # Initialize variables
         disk_total_bytes: int | None = None
         disk_usage_bytes: int | None = None
-        disk_usage_pct: float | None = None
         # Get values
         if NODE_FILESYSTEM_SIZE in metrics:
             disk_total_bytes = metrics[NODE_FILESYSTEM_SIZE]
@@ -448,20 +501,27 @@ class NodeExporterProvider(MetricsProvider):
             and disk_total_bytes > 0
             and disk_usage_bytes is not None
         ):
-            disk_usage_pct = disk_usage_bytes / disk_total_bytes * 100
+            sensor_metrics[METRIC_DISK_USAGE_BYTES] = disk_usage_bytes
+            sensor_metrics[METRIC_DISK_USAGE_PCT] = (
+                disk_usage_bytes / disk_total_bytes * 100
+            )
         # Set disk size
         if disk_total_bytes:
-            self.disk_size = disk_total_bytes
+            target_unit = get_appropriate_unit(disk_total_bytes)
+            sensor_metrics[PROPERTY_DISK_SIZE] = (
+                f"{floor(convert_bytes(disk_total_bytes, target_unit))} {target_unit}"
+            )
         # Return values
-        return disk_usage_bytes, disk_usage_pct
+        return sensor_metrics
 
     def _calculate_network_io(
         self, resource: str, metrics: dict, update_interval: int
-    ) -> tuple[float | None, float | None]:
+    ) -> dict[str, Any]:
         """Calculate network IO (receive bytes, transmit bytes)."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
+            return sensor_metrics
         # Check if update interval is valid
         if update_interval is None or update_interval <= 0:
             raise ValueError("Update interval must be positive")
@@ -470,8 +530,6 @@ class NodeExporterProvider(MetricsProvider):
         current_value_receive: int | None = None
         prev_value_transmit: int | None = None
         current_value_transmit: int | None = None
-        network_receive_bytes_per_second: float | None = None
-        network_transmit_bytes_per_second: float | None = None
         # Calculate network receive
         if NODE_NETWORK_RECEIVE in metrics:
             # Get current value
@@ -490,7 +548,7 @@ class NodeExporterProvider(MetricsProvider):
             )
             # Calculate network receive bytes per second
             if prev_value_receive is not None and current_value_receive is not None:
-                network_receive_bytes_per_second = (
+                sensor_metrics[METRIC_NETWORK_RECEIVE_BYTES] = (
                     current_value_receive - prev_value_receive
                 ) / update_interval
         # Calculate network transmit
@@ -511,30 +569,48 @@ class NodeExporterProvider(MetricsProvider):
             )
             # Calculate network transmit bytes per second
             if prev_value_transmit is not None and current_value_transmit is not None:
-                network_transmit_bytes_per_second = (
+                sensor_metrics[METRIC_NETWORK_TRANSMIT_BYTES] = (
                     current_value_transmit - prev_value_transmit
                 ) / update_interval
         # Return values
-        return network_receive_bytes_per_second, network_transmit_bytes_per_second
+        return sensor_metrics
 
-    def _calculate_uptime(
-        self, resource: str, metrics: dict
-    ) -> tuple[int | None, int | None]:
+    def _calculate_uptime(self, resource: str, metrics: dict) -> dict[str, Any]:
         """Calculate uptime."""
+        sensor_metrics = {}
         # Check if metrics are available
         if not metrics:
-            return None, None
+            return sensor_metrics
         # Initialize variables
         start_time: int | None = None
-        uptime_seconds: int | None = None
         # Get values
         if NODE_BOOT_TIME in metrics:
             start_time = metrics[NODE_BOOT_TIME]
         # Calculate uptime
         if start_time is not None:
-            uptime_seconds = int(time()) - start_time
+            sensor_metrics[PROPERTY_LAST_START_TIME] = datetime.fromtimestamp(
+                float(start_time), dt_util.UTC
+            )
+            sensor_metrics[METRIC_UPTIME_SECONDS] = int(time()) - start_time
         # Return values
-        return uptime_seconds, start_time
+        return sensor_metrics
+
+    def _calculate_virtual_resource_uptime(
+        self, resource: str, start_time: int
+    ) -> dict[str, Any]:
+        """Calculate uptime."""
+        sensor_metrics = {}
+        # Check if metrics are available
+        if not start_time:
+            return sensor_metrics
+        # Calculate uptime
+        if start_time is not None:
+            sensor_metrics[PROPERTY_LAST_START_TIME] = datetime.fromtimestamp(
+                float(start_time), dt_util.UTC
+            )
+            sensor_metrics[METRIC_VIRTUAL_RESOURCE_UPTIME] = int(time()) - start_time
+        # Return values
+        return sensor_metrics
 
     def _calculate_virtual_resource_status(
         self, resource: str, container_states: dict
@@ -547,18 +623,3 @@ class NodeExporterProvider(MetricsProvider):
             if value == 1.0:
                 return status
         return "unknown"
-
-    def _calculate_virtual_resource_uptime(
-        self, resource: str, start_time: int
-    ) -> tuple[int | None, int | None]:
-        """Calculate uptime."""
-        # Check if metrics are available
-        if not start_time:
-            return None, None
-        # Initialize variables
-        uptime_seconds: int | None = None
-        # Calculate uptime
-        if start_time is not None:
-            uptime_seconds = int(time()) - start_time
-        # Return values
-        return uptime_seconds, start_time

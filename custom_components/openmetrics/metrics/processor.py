@@ -1,7 +1,6 @@
 """Processor for metrics."""
 
 import logging
-from datetime import datetime
 
 from homeassistant.exceptions import HomeAssistantError
 
@@ -189,31 +188,3 @@ class OpenMetricsProcessor:
             return sensor_metrics
         _LOGGER.debug("No metrics processed")
         return {}
-
-    @property
-    def last_start_time(self) -> datetime | None:
-        """Return last start time."""
-        if not hasattr(self, "_provider"):
-            return None
-        return self._provider.last_start_time
-
-    @property
-    def cpu_cores(self) -> int | None:
-        """Return number of CPU cores."""
-        if not hasattr(self, "_provider"):
-            return None
-        return self._provider.cpu_cores
-
-    @property
-    def memory_size(self) -> int | None:
-        """Return memory size in bytes."""
-        if not hasattr(self, "_provider"):
-            return None
-        return self._provider.memory_size
-
-    @property
-    def disk_size(self) -> int | None:
-        """Return disk size in bytes."""
-        if not hasattr(self, "_provider"):
-            return None
-        return self._provider.disk_size
