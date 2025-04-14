@@ -67,9 +67,9 @@ class MetricsProvider(ABC):
     def post_process_resources(self, resources: dict) -> dict[str, ResourceInfoData]:
         """Handle resources - Rename, reorder and link resources."""
         # Reoder and link resources
-        if self.name in resources:
+        if self.RESOURCE_NAME in resources:
             res = {}
-            main_resource = resources[self.name]
+            main_resource = resources[self.RESOURCE_NAME]
             # Rename and add main resource
             if main_resource.name and not main_resource.is_virtual:
                 res[main_resource.name] = main_resource
@@ -77,7 +77,7 @@ class MetricsProvider(ABC):
             for resource_key, resource_info in resources.items():
                 if resource_info.is_virtual:
                     resource_info.via_resource = main_resource.name
-                if resource_key != self.name:
+                if resource_key != self.RESOURCE_NAME:
                     res[resource_info.name] = resource_info
             return res
         return resources

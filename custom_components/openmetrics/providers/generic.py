@@ -29,7 +29,7 @@ from ..lib.samples import Sample
 from ..metrics.data import ProviderInfoData, ResourceInfoData
 from ..metrics.filter import MetricFilter
 from ..providers.base import MetricsProvider
-from ..unit_converters import convert_bytes, get_appropriate_unit
+from ..unit_converters import convert_data_size, get_appropriate_unit
 from .cadvisor import PROVIDER_FILTERS as CADVISOR_PROVIDER_FILTERS
 from .node_exporter import (
     PROVIDER_FILTERS as NODE_EXPORTER_PROVIDER_FILTERS,
@@ -47,7 +47,13 @@ class GenericProvider(MetricsProvider):
     NETWORK_BYTES_REGEX = "^[^_]+(?:_spec)?_network_(?:receive|transmit)_bytes$"
     TIME_SECONDS_REGEX = "^(?!process)[^_]+(?:_start|_boot)?_time_seconds$"
     RESOURCE_REGEX = "^[^_]+_.*name_info$"
+    # Label regexes
     RESOURCE_LABEL_REGEX = "^(?:node)?name$"
+    NETWORK_INTERFACE_LABEL_REGEX = "^(?:device|interface)$"
+    # Value regexes
+    AT_LEAST_ONE_CHARACTER_REGEX = ".+"
+    NETWORK_INTERFACE_VALUE_REGEX = "^eth[0-9]+|wlan[0-9]+$"
+    FILESYSTEM_MOUNTPOINT_VALUE_REGEX = "^\\/$"
 
     metric_filters = [
         MetricFilter(
@@ -56,34 +62,50 @@ class GenericProvider(MetricsProvider):
         ),
         MetricFilter(
             metric_key=CPU_SECONDS_REGEX,
-            label_filters={"image": ".+", "name": ".+"},
+            label_filters={
+                "image": AT_LEAST_ONE_CHARACTER_REGEX,
+                "name": AT_LEAST_ONE_CHARACTER_REGEX,
+            },
             resource_label="name",
         ),
-        MetricFilter(metric_key=CPU_CORES_REGEX, label_filters={"machine_id": ".+"}),
+        MetricFilter(
+            metric_key=CPU_CORES_REGEX,
+            label_filters={"machine_id": AT_LEAST_ONE_CHARACTER_REGEX},
+        ),
         MetricFilter(
             metric_key=MEMORY_BYTES_REGEX,
         ),
         MetricFilter(
             metric_key=MEMORY_BYTES_REGEX,
-            label_filters={"image": ".+", "name": ".+"},
+            label_filters={
+                "image": AT_LEAST_ONE_CHARACTER_REGEX,
+                "name": AT_LEAST_ONE_CHARACTER_REGEX,
+            },
             resource_label="name",
         ),
         MetricFilter(
             metric_key=DISK_BYTES_REGEX,
-            label_filters={"mountpoint": "/"},
+            label_filters={"mountpoint": FILESYSTEM_MOUNTPOINT_VALUE_REGEX},
         ),
         MetricFilter(
             metric_key=DISK_BYTES_REGEX,
-            label_filters={"image": ".+", "name": ".+"},
+            label_filters={
+                "image": AT_LEAST_ONE_CHARACTER_REGEX,
+                "name": AT_LEAST_ONE_CHARACTER_REGEX,
+            },
             resource_label="name",
         ),
         MetricFilter(
             metric_key=NETWORK_BYTES_REGEX,
-            label_filters={"device": "eth0"},
+            label_filters={"device": NETWORK_INTERFACE_VALUE_REGEX},
         ),
         MetricFilter(
             metric_key=NETWORK_BYTES_REGEX,
-            label_filters={"image": ".+", "name": ".+", "interface": "eth0"},
+            label_filters={
+                "image": AT_LEAST_ONE_CHARACTER_REGEX,
+                "name": AT_LEAST_ONE_CHARACTER_REGEX,
+                "interface": NETWORK_INTERFACE_VALUE_REGEX,
+            },
             resource_label="name",
         ),
         MetricFilter(
@@ -91,7 +113,10 @@ class GenericProvider(MetricsProvider):
         ),
         MetricFilter(
             metric_key=TIME_SECONDS_REGEX,
-            label_filters={"image": ".+", "name": ".+"},
+            label_filters={
+                "image": AT_LEAST_ONE_CHARACTER_REGEX,
+                "name": AT_LEAST_ONE_CHARACTER_REGEX,
+            },
             resource_label="name",
         ),
     ]
@@ -126,16 +151,21 @@ class GenericProvider(MetricsProvider):
 
     def extract_resource_info(self, family: Metric, resources: dict):
         """Extract resource information."""
+        # Extract resource info from provider info
         if re.match(self.RESOURCE_REGEX, family.name, re.IGNORECASE):
             for sample in family.samples:
                 for label in sample.labels:
                     if re.match(self.RESOURCE_LABEL_REGEX, label):
                         name = sample.labels.get(label)
                         if name is not None and name != "" and name not in resources:
-                            resources[name] = ResourceInfoData(
-                                type=RESOURCE_TYPE_GENERIC, name=name
-                            )
+                            if self.resource_name in resources:
+                                resources[self.resource_name].name = name
+                            else:
+                                resources[name] = ResourceInfoData(
+                                    type=RESOURCE_TYPE_GENERIC, name=name
+                                )
                             self.resource_name = name
+        # Extract resource info from start time
         elif re.match(self.TIME_SECONDS_REGEX, family.name, re.IGNORECASE):
             for sample in family.samples:
                 for label in sample.labels:
@@ -145,6 +175,32 @@ class GenericProvider(MetricsProvider):
                             resources[name] = ResourceInfoData(
                                 type=RESOURCE_TYPE_GENERIC, name=name
                             )
+        # Extract network interfaces
+        elif re.match(self.NETWORK_BYTES_REGEX, family.name, re.IGNORECASE):
+            for sample in family.samples:
+                network_interfaces = set()
+                name = None
+                for label in sample.labels:
+                    # Ensure resource is existing
+                    if re.match(self.RESOURCE_LABEL_REGEX, label):
+                        name = sample.labels.get(label)
+                    # Collect network interfaces
+                    if re.match(self.NETWORK_INTERFACE_LABEL_REGEX, label):
+                        interface = sample.labels.get(label)
+                        if interface is not None and interface != "":
+                            if re.match(self.NETWORK_INTERFACE_VALUE_REGEX, interface):
+                                network_interfaces.add(interface)
+                if name is None and network_interfaces:
+                    name = self.resource_name
+                if name and network_interfaces:
+                    if name not in resources:
+                        resources[name] = ResourceInfoData(
+                            type=RESOURCE_TYPE_GENERIC, name=name
+                        )
+                        resources[name].network_interfaces = network_interfaces
+                    else:
+                        for interface in network_interfaces:
+                            resources[name].network_interfaces.add(interface)
 
     def collect_supported_metric(self, family: Metric, available_metrics: list[str]):
         """Collect supported metrics."""
@@ -232,9 +288,19 @@ class GenericProvider(MetricsProvider):
 
     def prepare_metric_value(self, metric_key: str, sample: Sample) -> float | dict:
         """Override: Collect metric value."""
-        cpu = sample.labels.get("cpu")
-        if cpu:
-            return {cpu: sample.value}
+        # CPU
+        if re.match(self.CPU_SECONDS_REGEX, metric_key, re.IGNORECASE):
+            cpu = sample.labels.get("cpu")
+            if cpu:
+                return {cpu: sample.value}
+        # Network
+        if re.match(self.NETWORK_BYTES_REGEX, metric_key, re.IGNORECASE):
+            for label in sample.labels:
+                if re.match(self.NETWORK_INTERFACE_LABEL_REGEX, label):
+                    interface_name = sample.labels.get(label)
+                    if interface_name is not None and interface_name != "":
+                        return {interface_name: sample.value}
+        # Other
         return sample.value
 
     def _pre_process_metrics(self, metrics: dict):
@@ -267,7 +333,6 @@ class GenericProvider(MetricsProvider):
         # Initialize variables
         prev_value = None
         current_value = None
-        cpu_usage_pct = None
         cpu_usage_total_pct = None
         cpu_cores_key = None
         cpu_seconds_key = None
@@ -299,18 +364,28 @@ class GenericProvider(MetricsProvider):
                 self._previous_metrics[resource][cpu_seconds_key][cpu] = current_value
                 if prev_value is not None and current_value is not None:
                     # CPU usage seconds
-                    if re.match(".*usage.*", cpu_seconds_key, re.IGNORECASE):
-                        self.cpu_cores = int(metrics.get(cpu_cores_key, 1))
+                    if (
+                        re.match(".*usage.*", cpu_seconds_key, re.IGNORECASE)
+                        and cpu == "total"
+                    ):
+                        # Get CPU cores
+                        cpu_cores = int(metrics.get(cpu_cores_key, 1))
+                        # Calculate total CPU usage
                         cpu_usage_time_delta = (
                             current_value - prev_value
                         )  # max = update interval * cores
-                        # Calculate total CPU usage
-                        cpu_cores_used = cpu_usage_time_delta / update_interval
-                        cpu_usage_pct = cpu_cores_used / self.cpu_cores * 100
-                        if cpu_usage_pct > 100:
-                            cpu_usage_pct = 100
-                        elif cpu_usage_pct < 0:
-                            cpu_usage_pct = 0
+                        cpu_usage_total_pct = (
+                            cpu_usage_time_delta / update_interval * 100
+                        )
+                        # max = 100% * cpu cores
+                        if cpu_usage_total_pct > 100 * cpu_cores:
+                            cpu_usage_total_pct = 100 * cpu_cores
+                        elif cpu_usage_total_pct < 0:
+                            cpu_usage_total_pct = 0
+                        # CPU core usage
+                        cpu_core_usage_pct = cpu_usage_total_pct / cpu_cores
+                        for i in range(cpu_cores):
+                            cpu_core_usage[i] = cpu_core_usage_pct
                     # CPU idle seconds
                     else:
                         # Calculate CPU core usage
@@ -323,20 +398,18 @@ class GenericProvider(MetricsProvider):
                         elif cpu_core_usage_pct < 0:
                             cpu_core_usage_pct = 0
                         cpu_core_usage[cpu] = cpu_core_usage_pct
+                        # Calculate CPU usage
                         if cpu_usage_total_pct is None:
                             cpu_usage_total_pct = 0
-                        cpu_usage_total_pct += (
-                            cpu_core_usage_pct  # max = 100% * cpu cores
-                        )
+                        # Max = 100% * cpu cores
+                        cpu_usage_total_pct += cpu_core_usage_pct
             # Calculate total CPU usage
             if cpu_usage_total_pct is not None:
                 # Set CPU cores
-                cpu_cores = len(metrics[cpu_seconds_key])
+                cpu_cores = len(cpu_core_usage)
                 sensor_metrics[PROPERTY_CPU_CORES] = cpu_cores
                 # Set CPU usage
-                cpu_usage_pct = cpu_usage_total_pct / cpu_cores
-                sensor_metrics[METRIC_CPU_USAGE_PCT] = cpu_usage_pct
-        # return (cpu_usage_pct, cpu_core_usage)
+                sensor_metrics[METRIC_CPU_USAGE_PCT] = cpu_usage_total_pct
         return sensor_metrics
 
     def _calculate_memory_usage(self, resource: str, metrics: dict) -> dict[str, Any]:
@@ -346,6 +419,7 @@ class GenericProvider(MetricsProvider):
         if not metrics:
             return sensor_metrics
         # Initialize variables
+        memory_size = None
         memory_total_bytes = None
         memory_free_bytes = None
         memory_usage_bytes = None
@@ -390,7 +464,6 @@ class GenericProvider(MetricsProvider):
 
             if memory_total_bytes is not None and memory_free_bytes is not None:
                 memory_usage_bytes = memory_total_bytes - memory_free_bytes
-                sensor_metrics[METRIC_MEMORY_USAGE_BYTES] = memory_usage_bytes
         # Calculate memory usage
         if (
             memory_total_bytes
@@ -401,6 +474,7 @@ class GenericProvider(MetricsProvider):
             memory_usage_pct = memory_usage_bytes / memory_total_bytes * 100
             memory_usage_pct = min(memory_usage_pct, 100)
             sensor_metrics[METRIC_MEMORY_USAGE_PCT] = memory_usage_pct
+            sensor_metrics[METRIC_MEMORY_USAGE_BYTES] = memory_usage_bytes
         # Set memory size
         if memory_total_bytes:
             memory_size = memory_total_bytes
@@ -411,7 +485,7 @@ class GenericProvider(MetricsProvider):
             # Convert memory size to appropriate unit
             target_unit = get_appropriate_unit(memory_size)
             sensor_metrics[PROPERTY_MEMORY_SIZE] = (
-                f"{floor(convert_bytes(memory_size, target_unit))} {target_unit}"
+                f"{floor(convert_data_size(memory_size, target_unit))} {target_unit}"
             )
         # Return values
         return sensor_metrics
@@ -461,7 +535,6 @@ class GenericProvider(MetricsProvider):
             disk_free_bytes = metrics[disk_free_key]
             if disk_total_bytes is not None and disk_free_bytes is not None:
                 disk_usage_bytes = disk_total_bytes - disk_free_bytes
-                sensor_metrics[METRIC_DISK_USAGE_BYTES] = disk_usage_bytes
         # Common calculation for disk usage percentage
         if (
             disk_total_bytes is not None
@@ -471,11 +544,12 @@ class GenericProvider(MetricsProvider):
             disk_usage_pct = disk_usage_bytes / disk_total_bytes * 100
             disk_usage_pct = min(disk_usage_pct, 100)
             sensor_metrics[METRIC_DISK_USAGE_PCT] = disk_usage_pct
+            sensor_metrics[METRIC_DISK_USAGE_BYTES] = disk_usage_bytes
         # Set disk size
         if disk_total_bytes:
             target_unit = get_appropriate_unit(disk_total_bytes)
             sensor_metrics[PROPERTY_DISK_SIZE] = (
-                f"{floor(convert_bytes(disk_total_bytes, target_unit))} {target_unit}"
+                f"{floor(convert_data_size(disk_total_bytes, target_unit))} {target_unit}"
             )
         # Return values
         return sensor_metrics
@@ -508,52 +582,75 @@ class GenericProvider(MetricsProvider):
                 network_transmit_key = metric_key
         # Calculate network receive
         if network_receive_key and network_receive_key in metrics:
-            # Get current value
-            current_value_receive = metrics[network_receive_key]
-            # Get previous value
-            if resource in self._previous_metrics:
-                if network_receive_key in self._previous_metrics[resource]:
-                    prev_value_receive = self._previous_metrics[resource][
-                        network_receive_key
-                    ]
-            else:
-                self._previous_metrics[resource] = {}
-            # Set current value as previous value
-            self._previous_metrics[resource][network_receive_key] = (
-                current_value_receive
-            )
-            # Calculate network receive bytes per second
-            if prev_value_receive is not None and current_value_receive is not None:
-                network_receive_bytes_per_second = (
-                    current_value_receive - prev_value_receive
-                ) / update_interval
-                sensor_metrics[METRIC_NETWORK_RECEIVE_BYTES] = max(
-                    network_receive_bytes_per_second, 0
+            for interface in metrics[network_receive_key]:
+                # Get current value
+                current_value_receive = metrics[network_receive_key][interface]
+                # Get previous value
+                if resource in self._previous_metrics:
+                    if network_receive_key in self._previous_metrics[resource]:
+                        if (
+                            interface
+                            in self._previous_metrics[resource][network_receive_key]
+                        ):
+                            prev_value_receive = self._previous_metrics[resource][
+                                network_receive_key
+                            ][interface]
+                    else:
+                        self._previous_metrics[resource][network_receive_key] = {}
+                else:
+                    self._previous_metrics[resource] = {network_receive_key: {}}
+                # Set current value as previous value
+                self._previous_metrics[resource][network_receive_key][interface] = (
+                    current_value_receive
                 )
+                # Calculate network receive bytes per second
+                if prev_value_receive is not None and current_value_receive is not None:
+                    interface_metric_key = (
+                        METRIC_NETWORK_RECEIVE_BYTES + "_" + interface
+                    )
+                    network_receive_bytes_per_second = (
+                        current_value_receive - prev_value_receive
+                    ) / update_interval
+                    sensor_metrics[interface_metric_key] = max(
+                        network_receive_bytes_per_second, 0
+                    )
         # Calculate network transmit
         if network_transmit_key and network_transmit_key in metrics:
-            # Get current value
-            current_value_transmit = metrics[network_transmit_key]
-            # Get previous value
-            if resource in self._previous_metrics:
-                if network_transmit_key in self._previous_metrics[resource]:
-                    prev_value_transmit = self._previous_metrics[resource][
-                        network_transmit_key
-                    ]
-            else:
-                self._previous_metrics[resource] = {}
-            # Set current value as previous value
-            self._previous_metrics[resource][network_transmit_key] = (
-                current_value_transmit
-            )
-            # Calculate network transmit bytes per second
-            if prev_value_transmit is not None and current_value_transmit is not None:
-                network_transmit_bytes_per_second = (
-                    current_value_transmit - prev_value_transmit
-                ) / update_interval
-                sensor_metrics[METRIC_NETWORK_TRANSMIT_BYTES] = max(
-                    network_transmit_bytes_per_second, 0
+            for interface in metrics[network_receive_key]:
+                # Get current value
+                current_value_transmit = metrics[network_transmit_key][interface]
+                # Get previous value
+                if resource in self._previous_metrics:
+                    if network_transmit_key in self._previous_metrics[resource]:
+                        if (
+                            interface
+                            in self._previous_metrics[resource][network_transmit_key]
+                        ):
+                            prev_value_transmit = self._previous_metrics[resource][
+                                network_transmit_key
+                            ][interface]
+                    else:
+                        self._previous_metrics[resource][network_transmit_key] = {}
+                else:
+                    self._previous_metrics[resource] = {network_transmit_key: {}}
+                # Set current value as previous value
+                self._previous_metrics[resource][network_transmit_key][interface] = (
+                    current_value_transmit
                 )
+                # Calculate network transmit bytes per second
+                if (
+                    prev_value_transmit is not None
+                    and current_value_transmit is not None
+                ):
+                    interface_metric_key = (
+                        METRIC_NETWORK_TRANSMIT_BYTES + "_" + interface
+                    )
+                    network_transmit_bytes_per_second = (
+                        current_value_transmit - prev_value_transmit
+                    ) / update_interval
+                    sensor_metrics[interface_metric_key] = max(
+                        network_transmit_bytes_per_second, 0
+                    )
         # Return values
         return sensor_metrics
 

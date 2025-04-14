@@ -103,8 +103,41 @@ def get_appropriate_unit(data_size_bytes):
     return decimal_units[index]
 
 
-def convert_bytes(data_size_bytes: int, target_unit: str) -> float:
-    """Convert a data size in bytes to a specified target unit."""
+def convert_data_size(
+    data_size: str | float,
+    target_unit: str,
+    source_unit: str = UnitOfInformation.BYTES,
+) -> float:
+    """Convert a data size string to a specified target unit.
+
+    Args:
+        data_size (str | float): The data size as string (e.g., '100MB', '1GB', '512KB') or as float (e.g., 1000000000.0)
+        target_unit (str): The target unit to convert to (e.g., UnitOfInformation.GIBIBYTES)
+        source_unit (str, optional): The source unit to convert from (default is UnitOfInformation.BYTES)
+
+    Returns:
+        float: The converted data size value in target unit.
+
+    Raises:
+        ValueError: If the input string format is invalid or unit is not supported.
+        TypeError: If the input data_size is not a string or float.
+
+    """
+    # Extract numeric value and unit from string
+    if isinstance(data_size, str):
+        match = re.match(r"^([\d.]+)\s*([A-Za-z]+)?$", data_size.strip())
+        if not match:
+            raise ValueError(f"Invalid data size format: {data_size}")
+        value = float(match.group(1))
+        source_unit = match.group(2)
+    elif isinstance(data_size, float | int):
+        value = data_size
+    else:
+        raise TypeError(f"Expected str or float, got {type(data_size).__name__}")
+    # Validate if source unit is supported using public method
+    if not DataSizeConverter.is_valid_unit(source_unit):
+        raise ValueError(f"Unsupported unit: {source_unit}")
+
     # Map from decimal to binary units
     binary_equivalent: dict[str | None, str] = {
         UnitOfInformation.KILOBYTES: UnitOfInformation.KIBIBYTES,
@@ -117,53 +150,31 @@ def convert_bytes(data_size_bytes: int, target_unit: str) -> float:
         UnitOfInformation.YOTTABYTES: UnitOfInformation.YOBIBYTES,
     }
     # Use binary units for values that are multiples of 64
-    if data_size_bytes % 64 == 0 and target_unit in binary_equivalent:
+    if value % 64 == 0 and value % 10 != 0 and target_unit in binary_equivalent:
         target_unit = binary_equivalent[target_unit]
-    # Perform the conversion from bytes to the target unit and return the result
-    return DataSizeConverter.convert(
-        data_size_bytes, UnitOfInformation.BYTES, target_unit
-    )
 
-
-def convert_data_size(data_size_str: str, target_unit: str) -> float:
-    """Convert a data size string to a specified target unit.
-
-    Args:
-        data_size_str (str): The data size as string (e.g., '256GB', '1.5TB', '512MiB')
-        target_unit (str): The target unit to convert to (e.g., UnitOfInformation.GIBIBYTES)
-
-    Returns:
-        float: The converted data size value in target unit.
-
-    Raises:
-        ValueError: If the input string format is invalid or unit is not supported.
-
-    """
-    # Extract numeric value and unit from string
-    match = re.match(r"^([\d.]+)\s*([A-Za-z]+)$", data_size_str.strip())
-    if not match:
-        raise ValueError(f"Invalid data size format: {data_size_str}")
-    value = float(match.group(1))
-    source_unit = match.group(2)
-    # Validate if source unit is supported using public method
-    if not DataSizeConverter.is_valid_unit(source_unit):
-        raise ValueError(f"Unsupported unit: {source_unit}")
     # Convert source unit to target unit and return the result
     return DataSizeConverter.convert(value, source_unit, target_unit)
 
 
-def convert_data_rate(data_rate_str: str, target_unit: str) -> float:
+def convert_data_rate(
+    data_rate: str | float,
+    target_unit: str,
+    source_unit: str = UnitOfDataRate.BYTES_PER_SECOND,
+) -> float:
     """Convert a data rate string to a specified target unit.
 
     Args:
-        data_rate_str (str): The data rate as string (e.g., '100Mbps', '1Gbps', '10MBps')
+        data_rate (str | float): The data rate as string (e.g., '100Mbps', '1Gbps', '512Kbps') or as float (e.g., 1000000000.0)
         target_unit (str): The target unit to convert to (e.g., UnitOfDataRate.MEGABITS_PER_SECOND)
+        source_unit (str, optional): The source unit to convert from (default is UnitOfDataRate.BYTES_PER_SECOND)
 
     Returns:
         float: The converted data rate value in target unit.
 
     Raises:
         ValueError: If the input string format is invalid or unit is not supported.
+        TypeError: If the input data_rate is not a string or float.
 
     Examples:
         >>> _convert_data_rate("100Mbps", UnitOfDataRate.GIGABITS_PER_SECOND)
@@ -172,12 +183,17 @@ def convert_data_rate(data_rate_str: str, target_unit: str) -> float:
         125.0
 
     """
-    # Extract numeric value and unit from string, handling optional 'ps' suffix
-    match = re.match(r"^([\d.]+)\s*([A-Za-z]+)$", data_rate_str.strip())
-    if not match:
-        raise ValueError(f"Invalid data rate format: {data_rate_str}")
-    value = float(match.group(1))
-    source_unit = match.group(2)
+    # Extract numeric value and unit from string
+    if isinstance(data_rate, str):
+        match = re.match(r"^([\d.]+)\s*([A-Za-z]+)?$", str(data_rate).strip())
+        if not match:
+            raise ValueError(f"Invalid data rate format: {data_rate}")
+        value = float(match.group(1))
+        source_unit = match.group(2)
+    elif isinstance(data_rate, float | int):
+        value = data_rate
+    else:
+        raise TypeError(f"Expected str or float, got {type(data_rate).__name__}")
     # Validate if source unit is supported using public method
     if not DataRateConverter.is_valid_unit(source_unit):
         raise ValueError(f"Unsupported unit: {source_unit}")

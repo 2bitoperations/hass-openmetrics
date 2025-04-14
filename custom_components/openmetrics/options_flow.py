@@ -340,10 +340,10 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
                 # Register device
                 device_entry = device_registry.async_get_or_create(
                     config_entry_id=self.config_entry.entry_id,
-                    name=sensors[0].device_info["name"],
-                    model=sensors[0].device_info["model"],
-                    identifiers=sensors[0].device_info["identifiers"],
-                    entry_type=sensors[0].device_info["entry_type"],
+                    name=sensors[0].device_info.get("name"),
+                    model=sensors[0].device_info.get("model"),
+                    identifiers=sensors[0].device_info.get("identifiers"),
+                    entry_type=sensors[0].device_info.get("entry_type"),
                     manufacturer=sensors[0].device_info.get("manufacturer"),
                     sw_version=sensors[0].device_info.get("sw_version"),
                 )
@@ -402,7 +402,6 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
                 # Remove entity
                 entity_registry.async_remove(entity_entry.entity_id)
                 removed = True
-                break
         # Remove virtual device if no entities left
         if len(relevant_entities) == 1 and removed and device.via_device_id:
             device_registry = self.hass.data[dr.DATA_REGISTRY]

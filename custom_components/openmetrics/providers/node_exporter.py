@@ -1,5 +1,6 @@
 """Node Exporter provider."""
 
+import re
 from datetime import datetime
 from math import floor
 from time import time
@@ -23,6 +24,7 @@ from ..const import (
     PROPERTY_DISK_SIZE,
     PROPERTY_LAST_START_TIME,
     PROPERTY_MEMORY_SIZE,
+    PROPERTY_NETWORK_SPEED,
     PROVIDER_NAME_NODE_EXPORTER,
     RESOURCE_TYPE_CONTAINER,
     RESOURCE_TYPE_NODE,
@@ -35,7 +37,6 @@ from ..metrics.data import (
     ResourceInfoData,
 )
 from ..unit_converters import (
-    convert_bytes,
     convert_data_rate,
     convert_data_size,
     get_appropriate_unit,
@@ -59,6 +60,7 @@ NODE_FILESYSTEM_SIZE = "node_filesystem_size_bytes"
 NODE_FILESYSTEM_FREE = "node_filesystem_free_bytes"
 NODE_NETWORK_RECEIVE = "node_network_receive_bytes"
 NODE_NETWORK_TRANSMIT = "node_network_transmit_bytes"
+NODE_NETWORK_INTERFACE_SPEED = "node_network_speed_bytes"
 NODE_CONTAINER_STATE_HEALTH_STATUS = "container_state_health_status"
 NODE_CONTAINER_STATE_STATUS = "container_state_status"
 NODE_CONTAINER_STATE_OOMKILLED = "container_state_oomkilled"
@@ -73,12 +75,21 @@ NODE_EXPORTER_OS_VERSION_LABEL = "version"
 NODE_EXPORTER_DEVICE_MODEL_LABEL = "model"
 NODE_EXPORTER_DEVICE_SERIAL_LABEL = "serial"
 NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL = "disk_size"
-NODE_EXPORTER_DEVICE_NETWORK_ETH0_SPEED_LABEL = "speed_eth0"
-NODE_EXPORTER_CPU_CORE_LABEL = "cpu"
+NODE_CPU_CORE_LABEL = "cpu"
+NODE_CPU_IDLE_SECONDS_LABEL = "mode"
+NODE_CPU_TEMP_LABEL = "type"
+NODE_FILESYSTEM_MOUNTPOINT_LABEL = "mountpoint"
+NODE_NETWORK_INTERFACE_LABEL = "device"
 NODE_CONTAINER_RESOURCE_LABEL = "name"
 NODE_CONTAINER_IMAGE_LABEL = "image"
 NODE_CONTAINER_STATE_STATUS_LABEL = "status"
-# Node Exporter textfile collector metrics
+# Regex
+NODE_AT_LEAST_ONE_CHARACTER_REGEX = ".+"
+NODE_CPU_IDLE_SECONDS_LABEL_REGEX = "^idle$"
+NODE_CPU_TEMP_LABEL_REGEX = "^cpu-thermal$"
+NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX = "^\\/$"
+NODE_NETWORK_INTERFACE_LABEL_REGEX = "^eth[0-9]+|wlan[0-9]+$"
+# Textfile collector metrics
 METRIC_VIRTUAL_RESOURCES = "virtual_resources"
 METRIC_VIRTUAL_RESOURCE_STATUS = "virtual_resource_status"
 METRIC_VIRTUAL_RESOURCE_STATUS_CREATED = "virtual_resource_status_created"
@@ -93,24 +104,24 @@ METRIC_VIRTUAL_RESOURCE_UPTIME = "virtual_resource_uptime"
 PROVIDER_FILTERS = [
     MetricFilter(
         metric_key=NODE_EXPORTER_BUILD_INFO,
-        label_filters={NODE_EXPORTER_VERSION_LABEL: ".+"},
+        label_filters={NODE_EXPORTER_VERSION_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX},
     ),
     MetricFilter(
         metric_key=NODE_UNAME_INFO,
-        label_filters={NODE_EXPORTER_RESOURCE_LABEL: ".+"},
+        label_filters={NODE_EXPORTER_RESOURCE_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX},
     ),
     MetricFilter(
         metric_key=NODE_OS_INFO,
         label_filters={
-            NODE_EXPORTER_OS_NAME_LABEL: ".+",
-            NODE_EXPORTER_OS_VERSION_LABEL: ".+",
+            NODE_EXPORTER_OS_NAME_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
+            NODE_EXPORTER_OS_VERSION_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
         },
     ),
     MetricFilter(
         metric_key=NODE_DEVICE_INFO,
         label_filters={
-            NODE_EXPORTER_DEVICE_MODEL_LABEL: ".+",
-            NODE_EXPORTER_DEVICE_SERIAL_LABEL: ".+",
+            NODE_EXPORTER_DEVICE_MODEL_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
+            NODE_EXPORTER_DEVICE_SERIAL_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
         },
     ),
 ]
@@ -124,11 +135,13 @@ class NodeExporterProvider(MetricsProvider):
         MetricFilter(metric_key=NODE_BOOT_TIME),
         MetricFilter(
             metric_key=NODE_CPU_TEMP,
-            label_filters={"type": "cpu-thermal"},
+            label_filters={NODE_CPU_TEMP_LABEL: NODE_CPU_TEMP_LABEL_REGEX},
         ),
         MetricFilter(
             metric_key=NODE_CPU_IDLE_SECONDS,
-            label_filters={"mode": "idle"},
+            label_filters={
+                NODE_CPU_IDLE_SECONDS_LABEL: NODE_CPU_IDLE_SECONDS_LABEL_REGEX
+            },
         ),
         MetricFilter(
             metric_key=NODE_MEMORY_AVAILABLE,
@@ -141,28 +154,52 @@ class NodeExporterProvider(MetricsProvider):
         ),
         MetricFilter(
             metric_key=NODE_FILESYSTEM_SIZE,
-            label_filters={"mountpoint": "^\\/$"},
+            label_filters={
+                NODE_FILESYSTEM_MOUNTPOINT_LABEL: NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX
+            },
         ),
         MetricFilter(
             metric_key=NODE_FILESYSTEM_FREE,
-            label_filters={"mountpoint": "^\\/$"},
+            label_filters={
+                NODE_FILESYSTEM_MOUNTPOINT_LABEL: NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX
+            },
         ),
         MetricFilter(
             metric_key=NODE_NETWORK_RECEIVE,
-            label_filters={"device": "eth0"},
+            label_filters={
+                NODE_NETWORK_INTERFACE_LABEL: NODE_NETWORK_INTERFACE_LABEL_REGEX
+            },
         ),
         MetricFilter(
             metric_key=NODE_NETWORK_TRANSMIT,
-            label_filters={"device": "eth0"},
+            label_filters={
+                NODE_NETWORK_INTERFACE_LABEL: NODE_NETWORK_INTERFACE_LABEL_REGEX
+            },
+        ),
+        MetricFilter(
+            metric_key=NODE_NETWORK_INTERFACE_SPEED,
+            label_filters={
+                NODE_NETWORK_INTERFACE_LABEL: NODE_NETWORK_INTERFACE_LABEL_REGEX
+            },
+        ),
+        MetricFilter(
+            metric_key=NODE_DEVICE_INFO,
+            label_filters={
+                NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX
+            },
         ),
         MetricFilter(
             metric_key=NODE_CONTAINER_STATE_STATUS,
-            label_filters={"status": ".+"},
+            label_filters={
+                NODE_CONTAINER_STATE_STATUS_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX
+            },
             resource_label=NODE_CONTAINER_RESOURCE_LABEL,
         ),
         MetricFilter(
             metric_key=NODE_CONTAINER_STATE_STARTEDAT,
-            label_filters={"name": ".+"},
+            label_filters={
+                NODE_CONTAINER_RESOURCE_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX
+            },
             resource_label=NODE_CONTAINER_RESOURCE_LABEL,
         ),
     ]
@@ -203,12 +240,12 @@ class NodeExporterProvider(MetricsProvider):
 
     def extract_resource_info(self, family: Metric, resources: dict):
         """Extract and store node resource information."""
-        # Initialize resource info if not yet initialized
-        if self.name not in resources:
+        # Initialize resource info for main resource (if not yet initialized)
+        if self.resource_name not in resources:
             resource_info = ResourceInfoData(type=RESOURCE_TYPE_NODE)
-            resources[self.name] = resource_info
+            resources[self.resource_name] = resource_info
         else:
-            resource_info = resources[self.name]
+            resource_info = resources[self.resource_name]
         # Extract resource info
         if family.name == NODE_UNAME_INFO:
             for sample in family.samples:
@@ -216,7 +253,7 @@ class NodeExporterProvider(MetricsProvider):
                 if nodename:
                     resource_info.name = nodename
                     self.resource_name = nodename
-        # Get software
+        # Extract software
         elif family.name == NODE_OS_INFO:
             for sample in family.samples:
                 if sample.labels.get(NODE_EXPORTER_OS_NAME_LABEL):
@@ -225,7 +262,7 @@ class NodeExporterProvider(MetricsProvider):
                     resource_info.version = sample.labels[
                         NODE_EXPORTER_OS_VERSION_LABEL
                     ]
-        # Get model and serial number
+        # Extract model and serial number
         elif family.name == NODE_DEVICE_INFO:
             for sample in family.samples:
                 # Get model
@@ -238,23 +275,17 @@ class NodeExporterProvider(MetricsProvider):
                     resource_info.serial_number = sample.labels[
                         NODE_EXPORTER_DEVICE_SERIAL_LABEL
                     ]
-                # Get disk size
-                if sample.labels.get(NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL):
-                    disk_size = sample.labels[NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL]
-                    if disk_size:
-                        target_unit = UnitOfInformation.GIGABYTES
-                        resource_info.disk_size = f"{round(convert_data_size(disk_size, target_unit), 2)} {target_unit}"
-                # Get network speed
-                if sample.labels.get(NODE_EXPORTER_DEVICE_NETWORK_ETH0_SPEED_LABEL):
-                    network_speed = sample.labels[
-                        NODE_EXPORTER_DEVICE_NETWORK_ETH0_SPEED_LABEL
-                    ]
-                    if network_speed:
-                        target_unit = UnitOfDataRate.MEGABITS_PER_SECOND
-                        resource_info.network_speed = {
-                            "eth0": f"{round(convert_data_rate(network_speed, target_unit), 2)} {target_unit}"
-                        }
-        # Get virtual resource info
+        # Extract network interfaces
+        elif family.name == NODE_NETWORK_INTERFACE_SPEED:
+            for sample in family.samples:
+                interface_name = sample.labels.get(NODE_NETWORK_INTERFACE_LABEL)
+                if interface_name:
+                    if not resource_info.network_interfaces:
+                        resource_info.network_interfaces = set()
+                    # Add interface name to network interfaces list
+                    if re.match(NODE_NETWORK_INTERFACE_LABEL_REGEX, interface_name):
+                        resource_info.network_interfaces.add(interface_name)
+        # Extract virtual resources and create resource info
         elif family.name in self.__virtual_resource_metric_keys:
             for sample in family.samples:
                 v_resource_name = sample.labels.get(NODE_CONTAINER_RESOURCE_LABEL)
@@ -322,12 +353,28 @@ class NodeExporterProvider(MetricsProvider):
 
     def prepare_metric_value(self, metric_key: str, sample: Sample) -> float | dict:
         """Override: Collect metric value."""
+        # CPU
         if metric_key == NODE_CPU_IDLE_SECONDS:
-            cpu = sample.labels[NODE_EXPORTER_CPU_CORE_LABEL]
+            cpu = sample.labels[NODE_CPU_CORE_LABEL]
             return {cpu: sample.value}
+        # Network
+        if metric_key in (
+            NODE_NETWORK_RECEIVE,
+            NODE_NETWORK_TRANSMIT,
+            NODE_NETWORK_INTERFACE_SPEED,
+        ):
+            interface = sample.labels[NODE_NETWORK_INTERFACE_LABEL]
+            return {interface: sample.value}
+        # Storage
+        if metric_key == NODE_DEVICE_INFO:
+            disk_size = sample.labels.get(NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL)
+            if disk_size:
+                return round(convert_data_size(disk_size, UnitOfInformation.BYTES))
+        # Container
         if metric_key == NODE_CONTAINER_STATE_STATUS:
             status = sample.labels[NODE_CONTAINER_STATE_STATUS_LABEL]
             return {status: sample.value}
+        # Other
         return sample.value
 
     def _pre_process_metrics(self, metrics: dict):
@@ -476,7 +523,7 @@ class NodeExporterProvider(MetricsProvider):
             # Convert memory size to appropriate unit
             target_unit = get_appropriate_unit(memory_size_bytes)
             sensor_metrics[PROPERTY_MEMORY_SIZE] = (
-                f"{floor(convert_bytes(memory_size_bytes, target_unit))} {target_unit}"
+                f"{floor(convert_data_size(memory_size_bytes, target_unit))} {target_unit}"
             )
         # Return values
         return sensor_metrics
@@ -509,7 +556,13 @@ class NodeExporterProvider(MetricsProvider):
         if disk_total_bytes:
             target_unit = get_appropriate_unit(disk_total_bytes)
             sensor_metrics[PROPERTY_DISK_SIZE] = (
-                f"{floor(convert_bytes(disk_total_bytes, target_unit))} {target_unit}"
+                f"{floor(convert_data_size(disk_total_bytes, target_unit))} {target_unit}"
+            )
+        if NODE_DEVICE_INFO in metrics:
+            disk_size = metrics[NODE_DEVICE_INFO]
+            target_unit = get_appropriate_unit(disk_size)
+            sensor_metrics[PROPERTY_DISK_SIZE] = (
+                f"{floor(convert_data_size(disk_size, target_unit))} {target_unit}"
             )
         # Return values
         return sensor_metrics
@@ -532,46 +585,74 @@ class NodeExporterProvider(MetricsProvider):
         current_value_transmit: int | None = None
         # Calculate network receive
         if NODE_NETWORK_RECEIVE in metrics:
-            # Get current value
-            current_value_receive = metrics[NODE_NETWORK_RECEIVE]
-            # Get previous value
-            if resource in self._previous_metrics:
-                if NODE_NETWORK_RECEIVE in self._previous_metrics[resource]:
-                    prev_value_receive = self._previous_metrics[resource][
-                        NODE_NETWORK_RECEIVE
-                    ]
-            else:
-                self._previous_metrics[resource] = {}
-            # Set current value as previous value
-            self._previous_metrics[resource][NODE_NETWORK_RECEIVE] = (
-                current_value_receive
-            )
-            # Calculate network receive bytes per second
-            if prev_value_receive is not None and current_value_receive is not None:
-                sensor_metrics[METRIC_NETWORK_RECEIVE_BYTES] = (
-                    current_value_receive - prev_value_receive
-                ) / update_interval
+            for interface in metrics[NODE_NETWORK_RECEIVE]:
+                # Get current value
+                current_value_receive = metrics[NODE_NETWORK_RECEIVE][interface]
+                # Get previous value
+                if resource in self._previous_metrics:
+                    if NODE_NETWORK_RECEIVE in self._previous_metrics[resource]:
+                        if (
+                            interface
+                            in self._previous_metrics[resource][NODE_NETWORK_RECEIVE]
+                        ):
+                            prev_value_receive = self._previous_metrics[resource][
+                                NODE_NETWORK_RECEIVE
+                            ][interface]
+                    else:
+                        self._previous_metrics[resource][NODE_NETWORK_RECEIVE] = {}
+                else:
+                    self._previous_metrics[resource] = {NODE_NETWORK_RECEIVE: {}}
+                # Set current value as previous value
+                self._previous_metrics[resource][NODE_NETWORK_RECEIVE][interface] = (
+                    current_value_receive
+                )
+                # Calculate network receive bytes per second
+                if prev_value_receive is not None and current_value_receive is not None:
+                    metric_key = f"{METRIC_NETWORK_RECEIVE_BYTES}_{interface}"
+                    sensor_metrics[metric_key] = (
+                        current_value_receive - prev_value_receive
+                    ) / update_interval
         # Calculate network transmit
         if NODE_NETWORK_TRANSMIT in metrics:
-            # Get current value
-            current_value_transmit = metrics[NODE_NETWORK_TRANSMIT]
-            # Get previous value
-            if resource in self._previous_metrics:
-                if NODE_NETWORK_TRANSMIT in self._previous_metrics[resource]:
-                    prev_value_transmit = self._previous_metrics[resource][
-                        NODE_NETWORK_TRANSMIT
-                    ]
-            else:
-                self._previous_metrics[resource] = {}
-            # Set current value as previous value
-            self._previous_metrics[resource][NODE_NETWORK_TRANSMIT] = (
-                current_value_transmit
-            )
-            # Calculate network transmit bytes per second
-            if prev_value_transmit is not None and current_value_transmit is not None:
-                sensor_metrics[METRIC_NETWORK_TRANSMIT_BYTES] = (
-                    current_value_transmit - prev_value_transmit
-                ) / update_interval
+            for interface in metrics[NODE_NETWORK_TRANSMIT]:
+                # Get current value
+                current_value_transmit = metrics[NODE_NETWORK_TRANSMIT][interface]
+                # Get previous value
+                if resource in self._previous_metrics:
+                    if NODE_NETWORK_TRANSMIT in self._previous_metrics[resource]:
+                        if (
+                            interface
+                            in self._previous_metrics[resource][NODE_NETWORK_TRANSMIT]
+                        ):
+                            prev_value_transmit = self._previous_metrics[resource][
+                                NODE_NETWORK_TRANSMIT
+                            ][interface]
+                    else:
+                        self._previous_metrics[resource][NODE_NETWORK_TRANSMIT] = {}
+                else:
+                    self._previous_metrics[resource] = {NODE_NETWORK_TRANSMIT: {}}
+                # Set current value as previous value
+                self._previous_metrics[resource][NODE_NETWORK_TRANSMIT][interface] = (
+                    current_value_transmit
+                )
+                # Calculate network transmit bytes per second
+                if (
+                    prev_value_transmit is not None
+                    and current_value_transmit is not None
+                ):
+                    metric_key = f"{METRIC_NETWORK_TRANSMIT_BYTES}_{interface}"
+                    sensor_metrics[metric_key] = (
+                        current_value_transmit - prev_value_transmit
+                    ) / update_interval
+        # Set network speed
+        if NODE_NETWORK_INTERFACE_SPEED in metrics:
+            network_speed = metrics[NODE_NETWORK_INTERFACE_SPEED]
+            sensor_metrics[PROPERTY_NETWORK_SPEED] = {}
+            for interface, speed in network_speed.items():
+                target_unit = UnitOfDataRate.MEGABITS_PER_SECOND
+                sensor_metrics[PROPERTY_NETWORK_SPEED][interface] = (
+                    f"{round(convert_data_rate(speed, target_unit))} {target_unit}"
+                )
         # Return values
         return sensor_metrics
 

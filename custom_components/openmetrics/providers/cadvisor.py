@@ -1,5 +1,6 @@
 """Cadvisor metrics provider."""
 
+import re
 from datetime import datetime
 from math import floor
 from time import time
@@ -25,9 +26,10 @@ from ..const import (
     RESOURCE_TYPE_CONTAINER,
 )
 from ..lib.metrics_core import Metric
+from ..lib.samples import Sample
 from ..metrics import MetricFilter
 from ..metrics.data import ProviderInfoData, ResourceInfoData
-from ..unit_converters import convert_bytes, get_appropriate_unit
+from ..unit_converters import convert_data_size, get_appropriate_unit
 from .base import MetricsProvider
 
 # Metrics
@@ -47,16 +49,20 @@ CONTAINER_NETWORK_TRANSMIT = "container_network_transmit_bytes"
 # Labels
 CADVISOR_VERSION_LABEL = "cadvisorVersion"
 CADVISOR_RESOURCE_LABEL = "name"
+CONTAINER_CPU_CORE_LABEL = "cpu"
 CONTAINER_IMAGE_NAME_LABEL = "image"
 CONTAINER_IMAGE_VERSION_LABEL = "container_label_org_opencontainers_image_version"
 CONTAINER_IMAGE_SERIAL_LABEL = "container_label_org_opencontainers_image_revision"
 CONTAINER_NETWORK_INTERFACE_LABEL = "interface"
 MACHINE_ID_LABEL = "machine_id"
+# Regex
+CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX = ".+"
+CONTAINER_NETWORK_INTERFACE_LABEL_REGEX = "^eth[0-9]+|wlan[0-9]+$"
 
 PROVIDER_FILTERS = [
     MetricFilter(
         metric_key=CADVISOR_VERSION_INFO,
-        label_filters={CADVISOR_VERSION_LABEL: ".+"},
+        label_filters={CADVISOR_VERSION_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX},
     )
 ]
 
@@ -68,79 +74,86 @@ class CadvisorProvider(MetricsProvider):
         MetricFilter(
             metric_key=CONTAINER_START_TIME,
             label_filters={
-                CONTAINER_IMAGE_NAME_LABEL: ".+",
-                CADVISOR_RESOURCE_LABEL: ".+",
+                CONTAINER_IMAGE_NAME_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CADVISOR_RESOURCE_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
         MetricFilter(
-            metric_key=MACHINE_CPU_CORES, label_filters={MACHINE_ID_LABEL: ".+"}
+            metric_key=MACHINE_CPU_CORES,
+            label_filters={MACHINE_ID_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX},
         ),
         MetricFilter(
             metric_key=CONTAINER_CPU_USAGE,
             label_filters={
-                CONTAINER_IMAGE_NAME_LABEL: ".+",
-                CADVISOR_RESOURCE_LABEL: ".+",
+                CONTAINER_IMAGE_NAME_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CADVISOR_RESOURCE_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
-        MetricFilter(metric_key=MACHINE_MEMORY, label_filters={MACHINE_ID_LABEL: ".+"}),
-        MetricFilter(metric_key=MACHINE_SWAP, label_filters={MACHINE_ID_LABEL: ".+"}),
+        MetricFilter(
+            metric_key=MACHINE_MEMORY,
+            label_filters={MACHINE_ID_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX},
+        ),
+        MetricFilter(
+            metric_key=MACHINE_SWAP,
+            label_filters={MACHINE_ID_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX},
+        ),
         MetricFilter(
             metric_key=CONTAINER_MEMORY_LIMIT,
             label_filters={
-                CONTAINER_IMAGE_NAME_LABEL: ".+",
-                CADVISOR_RESOURCE_LABEL: ".+",
+                CONTAINER_IMAGE_NAME_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CADVISOR_RESOURCE_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
         MetricFilter(
             metric_key=CONTAINER_MEMORY_USAGE,
             label_filters={
-                CONTAINER_IMAGE_NAME_LABEL: ".+",
-                CADVISOR_RESOURCE_LABEL: ".+",
+                CONTAINER_IMAGE_NAME_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CADVISOR_RESOURCE_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
         MetricFilter(
             metric_key=CONTAIENR_MEMORY_SWAP,
             label_filters={
-                CONTAINER_IMAGE_NAME_LABEL: ".+",
-                CADVISOR_RESOURCE_LABEL: ".+",
+                CONTAINER_IMAGE_NAME_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CADVISOR_RESOURCE_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
         MetricFilter(
             metric_key=CONTAINER_FS_USAGE,
             label_filters={
-                CONTAINER_IMAGE_NAME_LABEL: ".+",
-                CADVISOR_RESOURCE_LABEL: ".+",
+                CONTAINER_IMAGE_NAME_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CADVISOR_RESOURCE_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
         MetricFilter(
             metric_key=CONTAINER_FS_LIMIT,
             label_filters={
-                CONTAINER_IMAGE_NAME_LABEL: ".+",
-                CADVISOR_RESOURCE_LABEL: ".+",
+                CONTAINER_IMAGE_NAME_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CADVISOR_RESOURCE_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
         MetricFilter(
             metric_key=CONTAINER_NETWORK_RECEIVE,
             label_filters={
-                CONTAINER_IMAGE_NAME_LABEL: ".+",
-                CADVISOR_RESOURCE_LABEL: ".+",
-                CONTAINER_NETWORK_INTERFACE_LABEL: "eth0",
+                CONTAINER_IMAGE_NAME_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CADVISOR_RESOURCE_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CONTAINER_NETWORK_INTERFACE_LABEL: CONTAINER_NETWORK_INTERFACE_LABEL_REGEX,
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
         MetricFilter(
             metric_key=CONTAINER_NETWORK_TRANSMIT,
             label_filters={
-                CONTAINER_IMAGE_NAME_LABEL: ".+",
-                CADVISOR_RESOURCE_LABEL: ".+",
-                CONTAINER_NETWORK_INTERFACE_LABEL: "eth0",
+                CONTAINER_IMAGE_NAME_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CADVISOR_RESOURCE_LABEL: CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX,
+                CONTAINER_NETWORK_INTERFACE_LABEL: CONTAINER_NETWORK_INTERFACE_LABEL_REGEX,
             },
             resource_label=CADVISOR_RESOURCE_LABEL,
         ),
@@ -162,6 +175,35 @@ class CadvisorProvider(MetricsProvider):
         super().__init__(PROVIDER_NAME_CADVISOR, RESOURCE_TYPE_CONTAINER)
         self.provider_filters = PROVIDER_FILTERS
 
+    def __create_resource_info(
+        self, name: str, labels: dict[str, str]
+    ) -> ResourceInfoData:
+        """Create resource info."""
+        if not name:
+            raise ValueError("Name is required")
+        model = None
+        software = name
+        version = None
+        serial_number = None
+        # Get model
+        if labels.get(CONTAINER_IMAGE_NAME_LABEL):
+            model = labels[CONTAINER_IMAGE_NAME_LABEL]
+        # Get version
+        if labels.get(CONTAINER_IMAGE_VERSION_LABEL):
+            version = labels[CONTAINER_IMAGE_VERSION_LABEL]
+        # Get serial number
+        if labels.get(CONTAINER_IMAGE_SERIAL_LABEL):
+            serial_number = labels[CONTAINER_IMAGE_SERIAL_LABEL]
+        # Create resource info
+        return ResourceInfoData(
+            type=RESOURCE_TYPE_CONTAINER,
+            name=name,
+            model=model,
+            software=software,
+            version=version,
+            serial_number=serial_number,
+        )
+
     def extract_provider_info(self, family: Metric, provider_info: ProviderInfoData):
         """Extract and store provider information."""
         if family.name == CADVISOR_VERSION_INFO and family.samples:
@@ -169,32 +211,30 @@ class CadvisorProvider(MetricsProvider):
 
     def extract_resource_info(self, family: Metric, resources: dict):
         """Extract and store container resource information."""
+        # Extract resource info from start time
         if family.name == CONTAINER_START_TIME:
             for sample in family.samples:
-                name = sample.labels.get(CADVISOR_RESOURCE_LABEL, None)
-                if name is not None and name != "" and name not in resources:
-                    model = None
-                    software = name
-                    version = None
-                    serial_number = None
-                    # Get model
-                    if sample.labels.get(CONTAINER_IMAGE_NAME_LABEL):
-                        model = sample.labels[CONTAINER_IMAGE_NAME_LABEL]
-                    # Get version
-                    if sample.labels.get(CONTAINER_IMAGE_VERSION_LABEL):
-                        version = sample.labels[CONTAINER_IMAGE_VERSION_LABEL]
-                    # Get serial number
-                    if sample.labels.get(CONTAINER_IMAGE_SERIAL_LABEL):
-                        serial_number = sample.labels[CONTAINER_IMAGE_SERIAL_LABEL]
-                    # Create resource info
-                    resources[name] = ResourceInfoData(
-                        type=RESOURCE_TYPE_CONTAINER,
-                        name=name,
-                        model=model,
-                        software=software,
-                        version=version,
-                        serial_number=serial_number,
-                    )
+                name = sample.labels.get(CADVISOR_RESOURCE_LABEL)
+                if name and name not in resources:
+                    resources[name] = self.__create_resource_info(name, sample.labels)
+        # Extract network interfaces
+        elif family.name in (CONTAINER_NETWORK_RECEIVE, CONTAINER_NETWORK_TRANSMIT):
+            for sample in family.samples:
+                name = sample.labels.get(CADVISOR_RESOURCE_LABEL)
+                interface = sample.labels.get(CONTAINER_NETWORK_INTERFACE_LABEL)
+                if name and interface:
+                    # Ensure resource is existing
+                    if name not in resources:
+                        resources[name] = self.__create_resource_info(
+                            name, sample.labels
+                        )
+                        resources[name].network_interfaces = set()
+                    elif resources[name].network_interfaces is None:
+                        resources[name].network_interfaces = set()
+                    # Collect interfaces
+                    if interface is not None and interface != "":
+                        if re.match(CONTAINER_NETWORK_INTERFACE_LABEL_REGEX, interface):
+                            resources[name].network_interfaces.add(interface)
 
     def collect_supported_metric(self, family: Metric, available_metrics: list[str]):
         """Collect supported metrics."""
@@ -232,6 +272,19 @@ class CadvisorProvider(MetricsProvider):
             self._add_str_to_list_uniquely(
                 METRIC_NETWORK_TRANSMIT_BYTES, available_metrics
             )
+
+    def prepare_metric_value(self, metric_key: str, sample: Sample) -> float | dict:
+        """Override: Collect metric value."""
+        # CPU
+        if metric_key == CONTAINER_CPU_USAGE:
+            cpu = sample.labels[CONTAINER_CPU_CORE_LABEL]
+            return {cpu: sample.value}
+        # Network
+        if metric_key in (CONTAINER_NETWORK_RECEIVE, CONTAINER_NETWORK_TRANSMIT):
+            interface = sample.labels[CONTAINER_NETWORK_INTERFACE_LABEL]
+            return {interface: sample.value}
+        # Other
+        return sample.value
 
     def _pre_process_metrics(self, metrics: dict):
         """Pre-process metrics."""
@@ -279,46 +332,47 @@ class CadvisorProvider(MetricsProvider):
         # Initialize variables
         prev_value: float | None = None
         current_value: float | None = None
-        cpu_usage_pct_core: float | None = None
-        cpu_usage_pct: float | None = None
+        cpu_usage_total_pct: float | None = None
         cpu_core_usage = {}
         # Calculate CPU usage
         if CONTAINER_CPU_USAGE in metrics:
-            # Get current value
-            current_value = metrics[CONTAINER_CPU_USAGE]
-            # Get previous value
-            if resource in self._previous_metrics:
-                if CONTAINER_CPU_USAGE in self._previous_metrics[resource]:
-                    prev_value = self._previous_metrics[resource][CONTAINER_CPU_USAGE]
-            else:
-                self._previous_metrics[resource] = {}
-            # Set current value as previous value
-            self._previous_metrics[resource][CONTAINER_CPU_USAGE] = current_value
-            # Calculate CPU usage
-            if prev_value is not None and current_value is not None:
-                # Calculate CPU usage
-                cpu_seconds_delta = (
-                    current_value - prev_value
-                )  # max = update interval * cores
-                cpu_usage_pct = cpu_seconds_delta / update_interval * 100
-                if cpu_usage_pct and cpu_usage_pct > 100:
-                    cpu_usage_pct = 100
-                elif cpu_usage_pct and cpu_usage_pct < 0:
-                    cpu_usage_pct = 0
-                # Set CPU usage
-                sensor_metrics[METRIC_CPU_USAGE_PCT] = cpu_usage_pct
-                # Get CPU cores
-                cpu_cores = metrics.get(MACHINE_CPU_CORES, 1)
-                # Set CPU cores
-                sensor_metrics[PROPERTY_CPU_CORES] = cpu_cores
-                # Calculate CPU usage per core
-                if cpu_usage_pct > 0 and cpu_cores:
-                    cpu_usage_pct_core = cpu_usage_pct / cpu_cores
+            for cpu in metrics[CONTAINER_CPU_USAGE]:
+                # Get current value
+                current_value = metrics[CONTAINER_CPU_USAGE][cpu]
+                # Get previous value
+                if resource in self._previous_metrics:
+                    if CONTAINER_CPU_USAGE in self._previous_metrics[resource]:
+                        if cpu in self._previous_metrics[resource][CONTAINER_CPU_USAGE]:
+                            prev_value = self._previous_metrics[resource][
+                                CONTAINER_CPU_USAGE
+                            ][cpu]
                 else:
-                    cpu_usage_pct_core = cpu_usage_pct
-                if cpu_cores:
-                    for cpu_core in range(int(cpu_cores)):
-                        cpu_core_usage[cpu_core] = cpu_usage_pct_core
+                    self._previous_metrics[resource] = {}
+                    self._previous_metrics[resource][CONTAINER_CPU_USAGE] = {}
+                # Set current value as previous value
+                self._previous_metrics[resource][CONTAINER_CPU_USAGE][cpu] = (
+                    current_value
+                )
+                # Calculate CPU usage
+                if prev_value is not None and current_value is not None:
+                    # Get CPU cores
+                    cpu_cores = metrics.get(MACHINE_CPU_CORES, 1)
+                    # Calculate total CPU usage
+                    cpu_seconds_delta = current_value - prev_value
+                    cpu_usage_total_pct = cpu_seconds_delta / update_interval * 100
+                    # max = 100% * cpu cores
+                    if cpu_usage_total_pct and cpu_usage_total_pct > 100 * cpu_cores:
+                        cpu_usage_total_pct = 100 * cpu_cores
+                    elif cpu_usage_total_pct and cpu_usage_total_pct < 0:
+                        cpu_usage_total_pct = 0
+                    # Calculate CPU usage per core
+                    cpu_core_usage_pct = cpu_usage_total_pct / cpu_cores
+                    for i in range(int(cpu_cores)):
+                        cpu_core_usage[i] = cpu_core_usage_pct
+                    # Set CPU usage
+                    sensor_metrics[METRIC_CPU_USAGE_PCT] = cpu_usage_total_pct
+                    # Set CPU cores
+                    sensor_metrics[PROPERTY_CPU_CORES] = cpu_cores
         # Return values
         return sensor_metrics
 
@@ -354,7 +408,7 @@ class CadvisorProvider(MetricsProvider):
             # Convert memory size to appropriate unit
             target_unit = get_appropriate_unit(memory_total_bytes)
             sensor_metrics[PROPERTY_MEMORY_SIZE] = (
-                f"{floor(convert_bytes(memory_total_bytes, target_unit))} {target_unit}"
+                f"{floor(convert_data_size(memory_total_bytes, target_unit))} {target_unit}"
             )
         # Return values
         return sensor_metrics
@@ -382,7 +436,7 @@ class CadvisorProvider(MetricsProvider):
         if disk_total_bytes:
             target_unit = get_appropriate_unit(disk_total_bytes)
             sensor_metrics[PROPERTY_DISK_SIZE] = (
-                f"{floor(convert_bytes(disk_total_bytes, target_unit))} {target_unit}"
+                f"{floor(convert_data_size(disk_total_bytes, target_unit))} {target_unit}"
             )
         # Return values
         return sensor_metrics
@@ -405,47 +459,71 @@ class CadvisorProvider(MetricsProvider):
         current_value_transmit: float | None = None
         # Calculate network receive
         if CONTAINER_NETWORK_RECEIVE in metrics:
-            # Get current value
-            current_value_receive = metrics[CONTAINER_NETWORK_RECEIVE]
-            # Get previous value
-            if resource in self._previous_metrics:
-                if CONTAINER_NETWORK_RECEIVE in self._previous_metrics[resource]:
-                    prev_value_receive = self._previous_metrics[resource][
-                        CONTAINER_NETWORK_RECEIVE
-                    ]
-            else:
-                self._previous_metrics[resource] = {}
-            # Set current value as previous value
-            self._previous_metrics[resource][CONTAINER_NETWORK_RECEIVE] = (
-                current_value_receive
-            )
-            # Calculate network receive bytes per second
-            if prev_value_receive is not None and current_value_receive is not None:
-                sensor_metrics[METRIC_NETWORK_RECEIVE_BYTES] = (
-                    current_value_receive - prev_value_receive
-                ) / update_interval
+            for interface in metrics[CONTAINER_NETWORK_RECEIVE]:
+                # Get current value
+                current_value_receive = metrics[CONTAINER_NETWORK_RECEIVE][interface]
+                # Get previous value
+                if resource in self._previous_metrics:
+                    if CONTAINER_NETWORK_RECEIVE in self._previous_metrics[resource]:
+                        if (
+                            interface
+                            in self._previous_metrics[resource][
+                                CONTAINER_NETWORK_RECEIVE
+                            ]
+                        ):
+                            prev_value_receive = self._previous_metrics[resource][
+                                CONTAINER_NETWORK_RECEIVE
+                            ][interface]
+                    else:
+                        self._previous_metrics[resource][CONTAINER_NETWORK_RECEIVE] = {}
+                else:
+                    self._previous_metrics[resource] = {CONTAINER_NETWORK_RECEIVE: {}}
+                # Set current value as previous value
+                self._previous_metrics[resource][CONTAINER_NETWORK_RECEIVE][
+                    interface
+                ] = current_value_receive
+                # Calculate network receive bytes per second
+                if prev_value_receive is not None and current_value_receive is not None:
+                    metric_key = f"{METRIC_NETWORK_RECEIVE_BYTES}_{interface}"
+                    sensor_metrics[metric_key] = (
+                        current_value_receive - prev_value_receive
+                    ) / update_interval
         # Calculate network transmit
         if CONTAINER_NETWORK_TRANSMIT in metrics:
-            # Get current value
-            current_value_transmit = metrics[CONTAINER_NETWORK_TRANSMIT]
-            # Get previous value
-            if resource in self._previous_metrics:
-                if CONTAINER_NETWORK_TRANSMIT in self._previous_metrics[resource]:
-                    prev_value_transmit = self._previous_metrics[resource][
-                        CONTAINER_NETWORK_TRANSMIT
-                    ]
-            else:
-                self._previous_metrics[resource] = {}
-            # Set current value as previous value
-            self._previous_metrics[resource][CONTAINER_NETWORK_TRANSMIT] = (
-                current_value_transmit
-            )
-            # Calculate network transmit bytes per second
-            if prev_value_transmit is not None and current_value_transmit is not None:
-                sensor_metrics[METRIC_NETWORK_TRANSMIT_BYTES] = (
-                    current_value_transmit - prev_value_transmit
-                ) / update_interval
-
+            for interface in metrics[CONTAINER_NETWORK_TRANSMIT]:
+                # Get current value
+                current_value_transmit = metrics[CONTAINER_NETWORK_TRANSMIT][interface]
+                # Get previous value
+                if resource in self._previous_metrics:
+                    if CONTAINER_NETWORK_TRANSMIT in self._previous_metrics[resource]:
+                        if (
+                            interface
+                            in self._previous_metrics[resource][
+                                CONTAINER_NETWORK_TRANSMIT
+                            ]
+                        ):
+                            prev_value_transmit = self._previous_metrics[resource][
+                                CONTAINER_NETWORK_TRANSMIT
+                            ][interface]
+                    else:
+                        self._previous_metrics[resource][
+                            CONTAINER_NETWORK_TRANSMIT
+                        ] = {}
+                else:
+                    self._previous_metrics[resource] = {CONTAINER_NETWORK_TRANSMIT: {}}
+                # Set current value as previous value
+                self._previous_metrics[resource][CONTAINER_NETWORK_TRANSMIT][
+                    interface
+                ] = current_value_transmit
+                # Calculate network transmit bytes per second
+                if (
+                    prev_value_transmit is not None
+                    and current_value_transmit is not None
+                ):
+                    metric_key = f"{METRIC_NETWORK_TRANSMIT_BYTES}_{interface}"
+                    sensor_metrics[metric_key] = (
+                        current_value_transmit - prev_value_transmit
+                    ) / update_interval
         # Return values
         return sensor_metrics
 

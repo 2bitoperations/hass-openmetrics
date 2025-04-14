@@ -83,10 +83,20 @@
                 }
             },
             "network_receive_bytes": {
-                "name": "Network receive"
+                "name": "Network receive ({interface})",
+                "state_attributes": {
+                    "network_speed": {
+                        "name": "Speed"
+                    }
+                }
             },
             "network_transmit_bytes": {
-                "name": "Network transmit"
+                "name": "Network transmit ({interface})",
+                "state_attributes": {
+                    "network_speed": {
+                        "name": "Speed"
+                    }
+                }
             },
             "uptime_seconds": {
                 "name": "Uptime",

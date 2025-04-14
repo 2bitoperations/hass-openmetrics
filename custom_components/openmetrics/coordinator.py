@@ -17,8 +17,6 @@ from .client import (
 )
 from .const import (
     DOMAIN,
-    PROPERTY_DISK_SIZE,
-    PROPERTY_NETWORK_SPEED,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,6 +41,7 @@ class OpenMetricsDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self._client = client
         self.resources = resources
+        self.network_interfaces = None
 
     async def _async_update_data(self):
         """Fetch OpenMetrics data."""
@@ -54,15 +53,6 @@ class OpenMetricsDataUpdateCoordinator(DataUpdateCoordinator):
             metrics = await self._client.get_metrics(list(self.resources.keys()))
             # Process metrics for sensors
             sensor_data = self._client.process_metrics(metrics, self.update_interval)
-
-            for resource, resource_info in self.resources.items():
-                if resource_info.disk_size:
-                    sensor_data[resource][PROPERTY_DISK_SIZE] = resource_info.disk_size
-                if resource_info.network_speed:
-                    sensor_data[resource][PROPERTY_NETWORK_SPEED] = (
-                        resource_info.network_speed
-                    )
-
         except CannotConnectError as e:
             _LOGGER.error("Failed to connect: %s", str(e))
         except InvalidAuthError as e:

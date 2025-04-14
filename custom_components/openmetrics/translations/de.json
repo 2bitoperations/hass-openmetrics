@@ -83,10 +83,20 @@
                 }
             },
             "network_receive_bytes": {
-                "name": "Dateneingang"
+                "name": "Netzwerkempfang ({interface})",
+                "state_attributes": {
+                    "network_speed": {
+                        "name": "Geschwindigkeit"
+                    }
+                }
             },
             "network_transmit_bytes": {
-                "name": "Datenausgang"
+                "name": "Netzwerkübertragung ({interface})",
+                "state_attributes": {
+                    "network_speed": {
+                        "name": "Geschwindigkeit"
+                    }
+                }
             },
             "uptime_seconds": {
                 "name": "Laufzeit",
@@ -156,8 +166,8 @@
                 "disk_usage_pct": "Festplattennutzung (Prozent)",
                 "memory_usage_bytes": "Arbeitsspeichernutzung",
                 "memory_usage_pct": "Arbeitspeichernutzung (Prozent)",
-                "network_receive_bytes": "Dateneingang",
-                "network_transmit_bytes": "Datenausgang",
+                "network_receive_bytes": "Netzwerkempfang",
+                "network_transmit_bytes": "Netzwerkübertragung",
                 "uptime_seconds": "Laufzeit",
                 "device_name": "Name",
                 "virtual_resource_status": "Status der virtuellen Ressource",

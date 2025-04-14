@@ -210,9 +210,47 @@ def create_resource_sensors(
     for key, description in sensor_descriptions.items():
         # Check if metric is selected/enabled
         if key in metric_keys:
-            sensor = OpenMetricsSensor(coordinator, description, device_info)
-            sensors.append(sensor)
+            # Create network interface sensors
+            if (
+                key in (METRIC_NETWORK_RECEIVE_BYTES, METRIC_NETWORK_TRANSMIT_BYTES)
+                and resource.network_interfaces
+            ):
+                for interface in resource.network_interfaces:
+                    # Recreate description with interface as translation placeholder
+                    desc = add_translation_placeholders_to_description(
+                        description, {"interface": interface}
+                    )
+                    # Create sensor with modified description and identity
+                    sensor = OpenMetricsSensor(
+                        coordinator, desc, device_info, interface
+                    )
+                    sensors.append(sensor)
+            # Create other sensors
+            else:
+                sensor = OpenMetricsSensor(coordinator, description, device_info)
+                sensors.append(sensor)
     return sensors
+
+
+def add_translation_placeholders_to_description(
+    description: SensorEntityDescription, placeholder: dict[str, str]
+) -> SensorEntityDescription:
+    """Add translation placeholders to the sensor description."""
+    translation_placeholders = {}
+    if description.translation_placeholders:
+        translation_placeholders.update(description.translation_placeholders)
+    translation_placeholders.update(placeholder)
+    return SensorEntityDescription(
+        key=description.key,
+        icon=description.icon,
+        device_class=description.device_class,
+        state_class=description.state_class,
+        native_unit_of_measurement=description.native_unit_of_measurement,
+        suggested_unit_of_measurement=description.suggested_unit_of_measurement,
+        suggested_display_precision=description.suggested_display_precision,
+        translation_key=description.translation_key,
+        translation_placeholders=translation_placeholders,
+    )
 
 
 def create_device_info(
@@ -262,13 +300,18 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
         coordinator: DataUpdateCoordinator,
         description: SensorEntityDescription,
         device_info: DeviceInfo,
+        identity: str | None = None,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self.device_info = device_info
+        self.identity = identity
         identifier = next(iter(device_info.get("identifiers", {})))
         self._attr_unique_id = f"{identifier[1]}_{description.key}"
+        if identity:
+            # Add identity to the unique ID if provided
+            self._attr_unique_id += f"_{identity}"
         self.entity_id = f"sensor.{self._attr_unique_id.replace('.', '_').replace(':', '_').replace('/', '_')}"
 
     @property
@@ -291,6 +334,10 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
             return None
         if METRIC_DEVICE_NAME in self.entity_description.key:
             return resource
+        if self.identity:
+            return self.coordinator.data.get(resource, {}).get(
+                self.entity_description.key + "_" + self.identity
+            )
         return self.coordinator.data.get(resource, {}).get(self.entity_description.key)
 
     @property
@@ -373,7 +420,10 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
             ):
                 network_speed = resource_data.get(PROPERTY_NETWORK_SPEED)
                 if network_speed:
-                    return dict(network_speed.items())
+                    # Return the network speed for the specific interface
+                    if self.identity and self.identity in network_speed:
+                        # "network_speed" is the translation key
+                        return {"network_speed": network_speed[self.identity]}
             return None
 
     def __extract_image_name(self, image_string: str) -> str:
