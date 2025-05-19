@@ -66,11 +66,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "coordinator": coordinator,
             "host": host,
         }
-        # Forward the setup to your platforms
-        for platform in PLATFORMS:
-            hass.async_create_task(
-                hass.config_entries.async_forward_entry_setup(entry, platform)
-            )
+        # Forward setup to used platforms
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except CannotConnectError as e:
         _LOGGER.error("Failed to connect: %s", str(e))
         return False
