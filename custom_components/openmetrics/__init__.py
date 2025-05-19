@@ -104,6 +104,13 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.version,
         entry.minor_version,
     )
+    _LOGGER.debug("Starting migration process for entry ID: %s", entry.entry_id)
+
+    # Skip migration if not needed
+    if entry.version > 1:
+        # This means the user has downgraded from a future version
+        _LOGGER.debug("Migration skipped - entry version > 1")
+        return False
 
     # Extract the connection data from the config entry
     url = entry.data[CONF_URL]
@@ -115,20 +122,15 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     client = OpenMetricsClient(url, verify_ssl, username, password)
     metadata = await client.get_metadata()
 
-    # Skip migration if not needed
-    if entry.version > 1:
-        # This means the user has downgraded from a future version
-        return False
-
-    # Get current data
-    title = entry.title
+    # Create a copy of the entry data
     data = {**entry.data}
-    version = entry.version
-    minor_version = entry.minor_version
+    _LOGGER.debug("Created copy of entry data: %s", data)
 
     # Version 1 migration
     if entry.version == 1:
+        _LOGGER.debug("Starting version 1 migration")
         version = 2
+        minor_version = 1
         # Extract provider info
         provider_name = metadata.provider_info.name
         provider_version = metadata.provider_info.version
@@ -145,13 +147,16 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Updgrade data
         data["metrics"] = available_metrics
 
-    hass.config_entries.async_update_entry(
-        entry,
-        title=title,
-        data=data,
-        version=version,
-        minor_version=minor_version,
-    )
+        _LOGGER.debug("Updating entry data with new configuration")
+        hass.config_entries.async_update_entry(
+            entry,
+            title=title,
+            data=data,
+            version=version,
+            minor_version=minor_version,
+        )
+        _LOGGER.debug("Updated config entry with new data")
+
     _LOGGER.info(
         "Migration to configuration version %s.%s successful",
         entry.version,
