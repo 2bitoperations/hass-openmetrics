@@ -35,7 +35,8 @@ from .const import (
 from .coordinator import OpenMetricsDataUpdateCoordinator
 from .metrics.data import MetadataData
 from .metrics.processor import MetricsError, ResourcesError
-from .sensor import VIRTUAL_SENSORS, create_resource_sensors
+from .sensor import create_resource_sensors
+from .update import create_resource_update_entities
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
         configured_metrics = list(dict.fromkeys(self.config_entry.data[CONF_METRICS]))
         configured_scan_interval = self.config_entry.data[CONF_SCAN_INTERVAL]
         self.sensor_platform = self._get_platform(Platform.SENSOR)
+        self.update_platform = self._get_platform(Platform.UPDATE)
         # Process user input if available
         if user_input is not None:
             try:
@@ -337,6 +339,13 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
                     coordinator,
                     self.config_entry.data[CONF_METRICS],
                 )
+                # Create update entities
+                updates = create_resource_update_entities(
+                    resource,
+                    host,
+                    coordinator,
+                    self.config_entry.data[CONF_METRICS],
+                )
                 # Register device
                 device_entry = device_registry.async_get_or_create(
                     config_entry_id=self.config_entry.entry_id,
@@ -347,11 +356,16 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
                     manufacturer=sensors[0].device_info.get("manufacturer"),
                     sw_version=sensors[0].device_info.get("sw_version"),
                 )
-                # Link sensors to device
+                # Link entities to device
                 for sensor in sensors:
                     sensor.device_entry = device_entry
+                # Link updates to device
+                for update in updates:
+                    update.device_entry = device_entry
                 # Add sensors to hass
                 await self.sensor_platform.async_add_entities(sensors)
+                # Add updates to hass
+                await self.update_platform.async_add_entities(updates)
                 return True
         return False
 
@@ -360,6 +374,7 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
     ) -> bool:
         """Add an entity to a device."""
         sensors = []
+        updates = []
         # Get objects for sensors
         coordinator: OpenMetricsDataUpdateCoordinator = self.hass.data[DOMAIN][
             self.config_entry.entry_id
@@ -368,17 +383,22 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
         # Create sensors
         for resource in coordinator.resources.values():
             if (resource.name == device_entry.name and not resource.is_virtual) or (
-                resource.via_resource == device_entry.name
-                and metric_key in VIRTUAL_SENSORS
-                and resource.is_virtual
+                resource.via_resource == device_entry.name and resource.is_virtual
             ):
                 sensors.extend(
                     create_resource_sensors(resource, host, coordinator, [metric_key])
                 )
-        if len(sensors) == 0:
+                updates.extend(
+                    create_resource_update_entities(
+                        resource, host, coordinator, [metric_key]
+                    )
+                )
+        if len(sensors) == 0 and len(updates) == 0:
             return False
         # Add sensors to hass
         await self.sensor_platform.async_add_entities(sensors)
+        # Add updates to hass
+        await self.update_platform.async_add_entities(updates)
         return True
 
     async def _async_remove_entity_from_device(

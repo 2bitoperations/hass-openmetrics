@@ -17,7 +17,6 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
     DataUpdateCoordinator,
 )
 
@@ -41,9 +40,8 @@ from .const import (
     PROPERTY_LAST_START_TIME,
     PROPERTY_MEMORY_SIZE,
     PROPERTY_NETWORK_SPEED,
-    RESOURCE_TYPE_CONTAINER,
-    RESOURCE_TYPE_NODE,
 )
+from .entity import OpenMetricsBaseEntity, async_setup_entities, create_device_info
 from .metrics.data import ResourceInfoData
 from .providers.node_exporter import (
     METRIC_VIRTUAL_RESOURCE_STATUS,
@@ -178,22 +176,13 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up OpenMetrics sensors based on a config entry."""
-    # Get coordinator
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    host = hass.data[DOMAIN][entry.entry_id]["host"]
-    metric_keys = entry.data["metrics"]
-    # Create sensors
-    for resource in coordinator.resources.values():
-        # Create sensors for each resource
-        sensors = create_resource_sensors(resource, host, coordinator, metric_keys)
-        # Add sensors to hass
-        async_add_entities(sensors)
+    await async_setup_entities(hass, entry, async_add_entities, create_resource_sensors)
 
 
 def create_resource_sensors(
     resource: ResourceInfoData,
     host: str,
-    coordinator,
+    coordinator: DataUpdateCoordinator,
     metric_keys: list[str],
 ) -> list[Any]:
     """Create sensor entities for the given resource."""
@@ -253,42 +242,7 @@ def add_translation_placeholders_to_description(
     )
 
 
-def create_device_info(
-    unique_id: str,
-    resource: ResourceInfoData,
-    via_device: tuple[str, str] | None = None,
-) -> DeviceInfo:
-    """Create a device info object for a resource."""
-    # Create device info object with the minimal required fields (-> Generic provider)
-    device_info = DeviceInfo(
-        name=resource.name,
-        identifiers={(DOMAIN, unique_id)},
-    )
-    # Set model if provided
-    if resource.model:
-        device_info["model"] = resource.model
-    # Set serial number if provided
-    if resource.serial_number:
-        device_info["serial_number"] = resource.serial_number
-    # Set via_device if provided
-    if via_device:
-        device_info["via_device"] = via_device
-    # Set resource type related attributes
-    if resource.type == RESOURCE_TYPE_CONTAINER:
-        # Set software version
-        device_info["sw_version"] = resource.version
-        # Set entry type
-        device_info["entry_type"] = DeviceEntryType.SERVICE
-    elif resource.type == RESOURCE_TYPE_NODE:
-        if resource.software and resource.version:
-            device_info["sw_version"] = f"{resource.software} {resource.version}"
-        else:
-            device_info["sw_version"] = resource.software
-    # Return the device info object
-    return device_info
-
-
-class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
+class OpenMetricsSensor(OpenMetricsBaseEntity, SensorEntity):
     """Representation of an OpenMetrics sensor."""
 
     _attr_has_entity_name = True
@@ -303,26 +257,17 @@ class OpenMetricsSensor(CoordinatorEntity, SensorEntity):
         identity: str | None = None,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator)
         self.entity_description = description
-        self.device_info = device_info
         self.identity = identity
-        identifier = next(iter(device_info.get("identifiers", {})))
-        self._attr_unique_id = f"{identifier[1]}_{description.key}"
-        if identity:
+        super().__init__(coordinator, device_info)
+
+        if self._attr_unique_id and identity:
             # Add identity to the unique ID if provided
             self._attr_unique_id += f"_{identity}"
-        self.entity_id = f"sensor.{self._attr_unique_id.replace('.', '_').replace(':', '_').replace('/', '_')}"
 
-    @property
-    def translation_key(self) -> str | None:
-        """Return the translation key to translate the entity's name and states."""
-        return self.entity_description.translation_key
-
-    @property
-    def unique_id(self) -> str | None:
-        """Return the unique ID."""
-        return self._attr_unique_id
+        if self._attr_unique_id:
+            # Replace invalid characters in the unique ID with underscores
+            self.entity_id = f"sensor.{self._attr_unique_id.replace('.', '_').replace(':', '_').replace('/', '_')}"
 
     @property
     def native_value(self) -> StateType:
