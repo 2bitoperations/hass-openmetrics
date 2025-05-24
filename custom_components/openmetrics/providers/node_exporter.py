@@ -61,6 +61,7 @@ NODE_FILESYSTEM_FREE = "node_filesystem_free_bytes"
 NODE_NETWORK_RECEIVE = "node_network_receive_bytes"
 NODE_NETWORK_TRANSMIT = "node_network_transmit_bytes"
 NODE_NETWORK_INTERFACE_SPEED = "node_network_speed_bytes"
+NODE_OS_UPDATE_INFO = "node_os_update_info"
 NODE_CONTAINER_STATE_HEALTH_STATUS = "container_state_health_status"
 NODE_CONTAINER_STATE_STATUS = "container_state_status"
 NODE_CONTAINER_STATE_OOMKILLED = "container_state_oomkilled"
@@ -80,6 +81,8 @@ NODE_CPU_IDLE_SECONDS_LABEL = "mode"
 NODE_CPU_TEMP_LABEL = "type"
 NODE_FILESYSTEM_MOUNTPOINT_LABEL = "mountpoint"
 NODE_NETWORK_INTERFACE_LABEL = "device"
+NODE_OS_INSTALLED_VERSION_LABEL = "installed_version"
+NODE_OS_LATEST_VERSION_LABEL = "latest_version"
 NODE_CONTAINER_RESOURCE_LABEL = "name"
 NODE_CONTAINER_IMAGE_LABEL = "image"
 NODE_CONTAINER_STATE_STATUS_LABEL = "status"
@@ -90,6 +93,7 @@ NODE_CPU_TEMP_LABEL_REGEX = "^cpu-thermal$"
 NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX = "^\\/$"
 NODE_NETWORK_INTERFACE_LABEL_REGEX = "^eth[0-9]+|wlan[0-9]+$"
 # Textfile collector metrics
+METRIC_NODE_OS_UPDATE_INFO = "os_update_info"
 METRIC_VIRTUAL_RESOURCES = "virtual_resources"
 METRIC_VIRTUAL_RESOURCE_STATUS = "virtual_resource_status"
 METRIC_VIRTUAL_RESOURCE_STATUS_CREATED = "virtual_resource_status_created"
@@ -100,6 +104,10 @@ METRIC_VIRTUAL_RESOURCE_STATUS_REMOVING = "virtual_resource_status_removing"
 METRIC_VIRTUAL_RESOURCE_STATUS_EXITED = "virtual_resource_status_exited"
 METRIC_VIRTUAL_RESOURCE_STATUS_DEAD = "virtual_resource_status_dead"
 METRIC_VIRTUAL_RESOURCE_UPTIME = "virtual_resource_uptime"
+# Properties
+PROPERTY_CURRENTLY_INSTALLED_OS_VERSION = "os_version_currently_installed"
+PROPERTY_LATEST_AVAILABLE_OS_VERSION = "os_version_latest_available"
+
 
 PROVIDER_FILTERS = [
     MetricFilter(
@@ -189,6 +197,13 @@ class NodeExporterProvider(MetricsProvider):
             },
         ),
         MetricFilter(
+            metric_key=NODE_OS_UPDATE_INFO,
+            label_filters={
+                NODE_OS_INSTALLED_VERSION_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
+                NODE_OS_LATEST_VERSION_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
+            },
+        ),
+        MetricFilter(
             metric_key=NODE_CONTAINER_STATE_STATUS,
             label_filters={
                 NODE_CONTAINER_STATE_STATUS_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX
@@ -213,6 +228,7 @@ class NodeExporterProvider(MetricsProvider):
         NODE_NETWORK_RECEIVE: False,
         NODE_NETWORK_TRANSMIT: False,
         NODE_BOOT_TIME: False,
+        NODE_OS_UPDATE_INFO: False,
         NODE_CONTAINER_STATE_STATUS: False,
         NODE_CONTAINER_STATE_STARTEDAT: False,
     }
@@ -309,6 +325,10 @@ class NodeExporterProvider(MetricsProvider):
                 self._add_str_to_list_uniquely(METRIC_CPU_TEMP, available_metrics)
             elif family.name == NODE_BOOT_TIME:
                 self._add_str_to_list_uniquely(METRIC_UPTIME_SECONDS, available_metrics)
+            elif family.name == NODE_OS_UPDATE_INFO:
+                self._add_str_to_list_uniquely(
+                    METRIC_NODE_OS_UPDATE_INFO, available_metrics
+                )
             elif family.name == NODE_CONTAINER_STATE_STATUS:
                 self._add_str_to_list_uniquely(
                     METRIC_VIRTUAL_RESOURCE_STATUS, available_metrics
@@ -370,6 +390,17 @@ class NodeExporterProvider(MetricsProvider):
             disk_size = sample.labels.get(NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL)
             if disk_size:
                 return round(convert_data_size(disk_size, UnitOfInformation.BYTES))
+        # OS update
+        if metric_key == NODE_OS_UPDATE_INFO:
+            return {
+                NODE_OS_UPDATE_INFO: sample.value,
+                NODE_OS_INSTALLED_VERSION_LABEL: sample.labels.get(
+                    NODE_OS_INSTALLED_VERSION_LABEL
+                ),
+                NODE_OS_LATEST_VERSION_LABEL: sample.labels.get(
+                    NODE_OS_LATEST_VERSION_LABEL
+                ),
+            }
         # Container
         if metric_key == NODE_CONTAINER_STATE_STATUS:
             status = sample.labels[NODE_CONTAINER_STATE_STATUS_LABEL]
@@ -396,6 +427,19 @@ class NodeExporterProvider(MetricsProvider):
             # CPU temperature
             if NODE_CPU_TEMP in metrics and sensor_metrics:
                 sensor_metrics[METRIC_CPU_TEMP] = metrics[NODE_CPU_TEMP]
+
+            # OS update
+            if NODE_OS_UPDATE_INFO in metrics and sensor_metrics:
+                sensor_metrics[METRIC_NODE_OS_UPDATE_INFO] = metrics[
+                    NODE_OS_UPDATE_INFO
+                ][NODE_OS_UPDATE_INFO]
+                sensor_metrics[PROPERTY_CURRENTLY_INSTALLED_OS_VERSION] = metrics[
+                    NODE_OS_UPDATE_INFO
+                ][NODE_OS_INSTALLED_VERSION_LABEL]
+                sensor_metrics[PROPERTY_LATEST_AVAILABLE_OS_VERSION] = metrics[
+                    NODE_OS_UPDATE_INFO
+                ][NODE_OS_LATEST_VERSION_LABEL]
+
             # Virtual resources
             if METRIC_VIRTUAL_RESOURCES in metrics and sensor_metrics:
                 sensor_metrics[METRIC_VIRTUAL_RESOURCES] = metrics[
