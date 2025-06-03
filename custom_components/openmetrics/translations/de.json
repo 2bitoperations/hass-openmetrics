@@ -170,8 +170,10 @@
                 "network_transmit_bytes": "Netzwerkübertragung",
                 "uptime_seconds": "Laufzeit",
                 "device_name": "Name",
-                "virtual_resource_status": "Status der virtuellen Ressource",
-                "virtual_resource_uptime": "Laufzeit der virtuellen Ressource",
+                "os_update_info": "Betriebssystem-Update Informationen",
+                "virtual_resource_image_update_info": "Virtuelle Ressourcen: Image-Update Informationen",
+                "virtual_resource_status": "Virtuelle Ressourcen: Status",
+                "virtual_resource_uptime": "Virtuelle Ressourcen: Laufzeit",
                 "virtual_resources": "Virtuelle Ressourcen"
             }
         }
