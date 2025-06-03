@@ -68,6 +68,7 @@ NODE_CONTAINER_STATE_OOMKILLED = "container_state_oomkilled"
 NODE_CONTAINER_STATE_STARTEDAT = "container_state_startedat"
 NODE_CONTAINER_STATE_FINISHEDAT = "container_state_finishedat"
 NODE_CONTAINER_RESTARTCOUNT = "container_restartcount"
+NODE_CONTAINER_IMAGE_UPDATE_INFO = "container_image_update_info"
 # Labels
 NODE_EXPORTER_VERSION_LABEL = "version"
 NODE_EXPORTER_RESOURCE_LABEL = "nodename"
@@ -83,6 +84,8 @@ NODE_FILESYSTEM_MOUNTPOINT_LABEL = "mountpoint"
 NODE_NETWORK_INTERFACE_LABEL = "device"
 NODE_OS_INSTALLED_VERSION_LABEL = "installed_version"
 NODE_OS_LATEST_VERSION_LABEL = "latest_version"
+NODE_CONTAINER_IMAGE_USED_VERSION_LABEL = "used_version"
+NODE_CONTAINER_IMAGE_LATEST_VERSION_LABEL = "latest_version"
 NODE_CONTAINER_RESOURCE_LABEL = "name"
 NODE_CONTAINER_IMAGE_LABEL = "image"
 NODE_CONTAINER_STATE_STATUS_LABEL = "status"
@@ -95,6 +98,7 @@ NODE_NETWORK_INTERFACE_LABEL_REGEX = "^eth[0-9]+|wlan[0-9]+$"
 # Textfile collector metrics
 METRIC_NODE_OS_UPDATE_INFO = "os_update_info"
 METRIC_VIRTUAL_RESOURCES = "virtual_resources"
+METRIC_VIRTUAL_RESOURCE_IMAGE_UPDATE_INFO = "virtual_resource_image_update_info"
 METRIC_VIRTUAL_RESOURCE_STATUS = "virtual_resource_status"
 METRIC_VIRTUAL_RESOURCE_STATUS_CREATED = "virtual_resource_status_created"
 METRIC_VIRTUAL_RESOURCE_STATUS_RUNNING = "virtual_resource_status_running"
@@ -107,6 +111,8 @@ METRIC_VIRTUAL_RESOURCE_UPTIME = "virtual_resource_uptime"
 # Properties
 PROPERTY_CURRENTLY_INSTALLED_OS_VERSION = "os_version_currently_installed"
 PROPERTY_LATEST_AVAILABLE_OS_VERSION = "os_version_latest_available"
+PROPERTY_CURRENTLY_USED_IMAGE_VERSION = "image_version_currently_used"
+PROPERTY_LATEST_AVAILABLE_IMAGE_VERSION = "image_version_latest_available"
 
 
 PROVIDER_FILTERS = [
@@ -204,6 +210,15 @@ class NodeExporterProvider(MetricsProvider):
             },
         ),
         MetricFilter(
+            metric_key=NODE_CONTAINER_IMAGE_UPDATE_INFO,
+            label_filters={
+                NODE_CONTAINER_IMAGE_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
+                NODE_CONTAINER_IMAGE_USED_VERSION_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
+                NODE_CONTAINER_IMAGE_LATEST_VERSION_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
+            },
+            resource_label=NODE_CONTAINER_RESOURCE_LABEL,
+        ),
+        MetricFilter(
             metric_key=NODE_CONTAINER_STATE_STATUS,
             label_filters={
                 NODE_CONTAINER_STATE_STATUS_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX
@@ -229,6 +244,7 @@ class NodeExporterProvider(MetricsProvider):
         NODE_NETWORK_TRANSMIT: False,
         NODE_BOOT_TIME: False,
         NODE_OS_UPDATE_INFO: False,
+        NODE_CONTAINER_IMAGE_UPDATE_INFO: False,
         NODE_CONTAINER_STATE_STATUS: False,
         NODE_CONTAINER_STATE_STARTEDAT: False,
     }
@@ -305,10 +321,14 @@ class NodeExporterProvider(MetricsProvider):
         elif family.name in self.__virtual_resource_metric_keys:
             for sample in family.samples:
                 v_resource_name = sample.labels.get(NODE_CONTAINER_RESOURCE_LABEL)
+                v_resource_software = sample.labels.get(NODE_CONTAINER_IMAGE_LABEL)
+                if v_resource_software:
+                    v_resource_software = v_resource_software.split(":")[0]
                 if v_resource_name and v_resource_name not in resources:
                     v_resource_info = ResourceInfoData(
                         type=RESOURCE_TYPE_CONTAINER,
                         name=v_resource_name,
+                        software=v_resource_software,
                         model=sample.labels.get(NODE_CONTAINER_IMAGE_LABEL),
                         is_virtual=True,
                     )
@@ -328,6 +348,13 @@ class NodeExporterProvider(MetricsProvider):
             elif family.name == NODE_OS_UPDATE_INFO:
                 self._add_str_to_list_uniquely(
                     METRIC_NODE_OS_UPDATE_INFO, available_metrics
+                )
+            elif family.name == NODE_CONTAINER_IMAGE_UPDATE_INFO:
+                self._add_str_to_list_uniquely(
+                    METRIC_VIRTUAL_RESOURCE_IMAGE_UPDATE_INFO, available_metrics
+                )
+                self._add_str_to_list_uniquely(
+                    METRIC_VIRTUAL_RESOURCES, available_metrics
                 )
             elif family.name == NODE_CONTAINER_STATE_STATUS:
                 self._add_str_to_list_uniquely(
@@ -402,6 +429,16 @@ class NodeExporterProvider(MetricsProvider):
                 ),
             }
         # Container
+        if metric_key == NODE_CONTAINER_IMAGE_UPDATE_INFO:
+            return {
+                NODE_CONTAINER_IMAGE_UPDATE_INFO: sample.value,
+                NODE_CONTAINER_IMAGE_USED_VERSION_LABEL: sample.labels.get(
+                    NODE_CONTAINER_IMAGE_USED_VERSION_LABEL
+                ),
+                NODE_CONTAINER_IMAGE_LATEST_VERSION_LABEL: sample.labels.get(
+                    NODE_CONTAINER_IMAGE_LATEST_VERSION_LABEL
+                ),
+            }
         if metric_key == NODE_CONTAINER_STATE_STATUS:
             status = sample.labels[NODE_CONTAINER_STATE_STATUS_LABEL]
             return {status: sample.value}
@@ -456,6 +493,17 @@ class NodeExporterProvider(MetricsProvider):
     ) -> dict | None:
         """Process virtual resource metrics and return sensor metrics."""
         sensor_metrics = {}
+        # Calculate container image update
+        if NODE_CONTAINER_IMAGE_UPDATE_INFO in metrics:
+            sensor_metrics[METRIC_VIRTUAL_RESOURCE_IMAGE_UPDATE_INFO] = metrics[
+                NODE_CONTAINER_IMAGE_UPDATE_INFO
+            ][NODE_CONTAINER_IMAGE_UPDATE_INFO]
+            sensor_metrics[PROPERTY_CURRENTLY_USED_IMAGE_VERSION] = metrics[
+                NODE_CONTAINER_IMAGE_UPDATE_INFO
+            ][NODE_CONTAINER_IMAGE_USED_VERSION_LABEL]
+            sensor_metrics[PROPERTY_LATEST_AVAILABLE_IMAGE_VERSION] = metrics[
+                NODE_CONTAINER_IMAGE_UPDATE_INFO
+            ][NODE_CONTAINER_IMAGE_LATEST_VERSION_LABEL]
         # Calculate container status
         if NODE_CONTAINER_STATE_STATUS in metrics:
             sensor_metrics[METRIC_VIRTUAL_RESOURCE_STATUS] = (

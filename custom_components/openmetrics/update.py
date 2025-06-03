@@ -21,7 +21,10 @@ from .entity import OpenMetricsBaseEntity, async_setup_entities, create_device_i
 from .metrics.data import ResourceInfoData
 from .providers.node_exporter import (
     METRIC_NODE_OS_UPDATE_INFO,
+    METRIC_VIRTUAL_RESOURCE_IMAGE_UPDATE_INFO,
     PROPERTY_CURRENTLY_INSTALLED_OS_VERSION,
+    PROPERTY_CURRENTLY_USED_IMAGE_VERSION,
+    PROPERTY_LATEST_AVAILABLE_IMAGE_VERSION,
     PROPERTY_LATEST_AVAILABLE_OS_VERSION,
 )
 
@@ -30,6 +33,15 @@ UPDATE_ENTITIES: dict[str, UpdateEntityDescription] = {
         key=METRIC_NODE_OS_UPDATE_INFO,
         icon="mdi:update",
         translation_key=METRIC_NODE_OS_UPDATE_INFO,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+}
+
+VIRTUAL_UPDATE_ENTITIES: dict[str, UpdateEntityDescription] = {
+    METRIC_VIRTUAL_RESOURCE_IMAGE_UPDATE_INFO: UpdateEntityDescription(
+        key=METRIC_VIRTUAL_RESOURCE_IMAGE_UPDATE_INFO,
+        icon="mdi:update",
+        translation_key=METRIC_VIRTUAL_RESOURCE_IMAGE_UPDATE_INFO,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
 }
@@ -56,7 +68,7 @@ def create_resource_update_entities(
     if resource.is_virtual:
         via_device = (DOMAIN, f"{host}_{resource.via_resource}")
         device_info = create_device_info(unique_id, resource, via_device)
-        update_entity_descriptions = {}
+        update_entity_descriptions = VIRTUAL_UPDATE_ENTITIES
     else:
         device_info = create_device_info(unique_id, resource)
         update_entity_descriptions = UPDATE_ENTITIES
@@ -104,8 +116,12 @@ class OpenMetricsUpdateEntity(OpenMetricsBaseEntity, UpdateEntity):
         resource = self.resource.name
         if not resource:
             return None
+        if self.resource.is_virtual:
+            property_name = PROPERTY_CURRENTLY_USED_IMAGE_VERSION
+        else:
+            property_name = PROPERTY_CURRENTLY_INSTALLED_OS_VERSION
         self._attr_installed_version = self.coordinator.data.get(resource, {}).get(
-            PROPERTY_CURRENTLY_INSTALLED_OS_VERSION
+            property_name
         )
         return self._attr_installed_version
 
@@ -117,7 +133,11 @@ class OpenMetricsUpdateEntity(OpenMetricsBaseEntity, UpdateEntity):
         resource = self.resource.name
         if not resource:
             return None
+        if self.resource.is_virtual:
+            property_name = PROPERTY_LATEST_AVAILABLE_IMAGE_VERSION
+        else:
+            property_name = PROPERTY_LATEST_AVAILABLE_OS_VERSION
         self._attr_latest_version = self.coordinator.data.get(resource, {}).get(
-            PROPERTY_LATEST_AVAILABLE_OS_VERSION
+            property_name
         )
         return self._attr_latest_version
