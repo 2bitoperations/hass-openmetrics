@@ -50,6 +50,7 @@ def create_device_info(
         # Set entry type
         device_info["entry_type"] = DeviceEntryType.SERVICE
     elif resource.type == RESOURCE_TYPE_NODE:
+        # Set software version
         if resource.software and resource.version:
             device_info["sw_version"] = f"{resource.software} {resource.version}"
         else:

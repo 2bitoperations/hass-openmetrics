@@ -1,5 +1,6 @@
 """Base class for metrics providers."""
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -172,3 +173,72 @@ class MetricsProvider(ABC):
         sensor_metrics.update(self._calculate_uptime(resource, metrics))
         # Return sensor metrics
         return sensor_metrics
+
+    def _get_model_from_image(self, image_name: str) -> str:
+        """Get model of Docker image."""
+        # Set Docker's default registry and namespace
+        default_registry = "docker.io"
+        default_namespace = "library"
+
+        # Remove tag if present
+        image = image_name.split(":", 1)[0]
+
+        # Split by slash
+        parts = image.split("/")
+
+        if len(parts) == 1:
+            # Example: "traefik"
+            registry = default_registry
+            namespace = default_namespace
+        elif len(parts) == 2:
+            # Example: "duplicati/duplicati"
+            registry = default_registry
+            namespace = parts[0]
+        # Example: "lscr.io/linuxserver/homeassistant"
+        elif "." in parts[0] or ":" in parts[0]:
+            # Registry is specified
+            registry = parts[0]
+            namespace = parts[1]
+        else:
+            # Registry is not specified, treat first part as namespace
+            registry = default_registry
+            namespace = parts[0]
+
+        return f"{registry}/{namespace}"
+
+    def _get_application_from_image(self, image_name: str) -> str:
+        """Get application name from Docker image."""
+        # Remove tag if present
+        image = image_name.split(":", 1)[0]
+        # Split by slash and return the last part (application name)
+        parts = image.split("/")
+        return parts[-1]
+
+    def _get_version_from_image(self, image_name: str) -> str:
+        """Get version of Docker image."""
+        # Extract tag (part after the last colon, if present)
+        if ":" in image_name and "/" in image_name.split(":")[-1]:
+            # Handle cases like gcr.io/cadvisor/cadvisor:v0.52.1 (colon in registry)
+            tag = None
+        elif ":" in image_name:
+            tag = image_name.rsplit(":", 1)[-1]
+        else:
+            tag = "latest"
+
+        # If tag is None (no tag present), default to "unknown"
+        if not tag:
+            tag = "unknown"
+
+        # Normalize: remove leading 'v' or other non-numeric prefixes
+        # Keep 'latest' as is
+        if tag not in ("latest", "unknown"):
+            tag = self._normalize_version(tag)
+
+        return tag
+
+    def _normalize_version(self, version: str) -> str:
+        """Normalize version string."""
+        # Remove leading non-digit/period characters
+        version = re.sub(r"^[^\d]*", "", version)
+        # Remove trailing non-digit/period characters (if any)
+        return re.sub(r"[^\d.]*$", "", version)

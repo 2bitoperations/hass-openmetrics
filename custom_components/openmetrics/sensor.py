@@ -294,33 +294,21 @@ class OpenMetricsSensor(OpenMetricsBaseEntity, SensorEntity):
             if self.entity_description.key == METRIC_DEVICE_NAME:
                 properties = {}
                 # Model
-                properties[PROPERTY_DEVICE_MODEL] = "n/a"
-                if self.device_info.get("model"):
-                    model = self.device_info.get("model")
-                    if model:
-                        properties[PROPERTY_DEVICE_MODEL] = model
+                properties[PROPERTY_DEVICE_MODEL] = (
+                    self.device_info.get("model") or "n/a"
+                )
                 # Software
-                properties[PROPERTY_DEVICE_SOFTWARE] = "n/a"
-                if self.device_info.get("sw_version"):
-                    if self.device_info.get("entry_type") == DeviceEntryType.SERVICE:
-                        name = self.device_info.get("name")
-                        if model:
-                            image_name = self.__extract_image_name(model)
-                            if image_name:
-                                name = image_name
-                        properties[PROPERTY_DEVICE_SOFTWARE] = (
-                            f"{name} {self.device_info.get('sw_version')}"
-                        )
-                    else:
-                        properties[PROPERTY_DEVICE_SOFTWARE] = self.device_info.get(
-                            "sw_version"
-                        )
+                if self.device_info.get("entry_type") == DeviceEntryType.SERVICE:
+                    software = self.device_info.get("name")
+                    if software and self.device_info.get("sw_version"):
+                        software += f" {self.device_info.get('sw_version')}"
+                else:
+                    software = self.device_info.get("sw_version")
+                properties[PROPERTY_DEVICE_SOFTWARE] = software or "n/a"
                 # Serial number
-                properties[PROPERTY_DEVICE_SERIAL] = "n/a"
-                if self.device_info.get("serial_number"):
-                    properties[PROPERTY_DEVICE_SERIAL] = self.device_info.get(
-                        "serial_number"
-                    )
+                properties[PROPERTY_DEVICE_SERIAL] = (
+                    self.device_info.get("serial_number") or "n/a"
+                )
                 # Return the properties
                 return properties
 
@@ -370,10 +358,3 @@ class OpenMetricsSensor(OpenMetricsBaseEntity, SensorEntity):
                         # "network_speed" is the translation key
                         return {"network_speed": network_speed[self.identity]}
             return None
-
-    def __extract_image_name(self, image_string: str) -> str:
-        """Extract image name from image string."""
-        # Split by the last slash
-        last_part = image_string.split("/")[-1]
-        # Split by colon and take the first part
-        return last_part.split(":")[0]

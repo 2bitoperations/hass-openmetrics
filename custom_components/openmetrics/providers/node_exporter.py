@@ -321,15 +321,20 @@ class NodeExporterProvider(MetricsProvider):
         elif family.name in self.__virtual_resource_metric_keys:
             for sample in family.samples:
                 v_resource_name = sample.labels.get(NODE_CONTAINER_RESOURCE_LABEL)
-                v_resource_software = sample.labels.get(NODE_CONTAINER_IMAGE_LABEL)
-                if v_resource_software:
-                    v_resource_software = v_resource_software.split(":")[0]
+                v_resource_image = sample.labels.get(NODE_CONTAINER_IMAGE_LABEL)
+                if v_resource_image:
+                    v_resource_software = self._get_application_from_image(
+                        v_resource_image
+                    )
+                    v_resource_model = self._get_model_from_image(v_resource_image)
+                    v_resource_version = self._get_version_from_image(v_resource_image)
                 if v_resource_name and v_resource_name not in resources:
                     v_resource_info = ResourceInfoData(
                         type=RESOURCE_TYPE_CONTAINER,
                         name=v_resource_name,
                         software=v_resource_software,
-                        model=sample.labels.get(NODE_CONTAINER_IMAGE_LABEL),
+                        version=v_resource_version,
+                        model=v_resource_model,
                         is_virtual=True,
                     )
                     resources[v_resource_name] = v_resource_info

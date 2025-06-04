@@ -187,10 +187,16 @@ class CadvisorProvider(MetricsProvider):
         serial_number = None
         # Get model
         if labels.get(CONTAINER_IMAGE_NAME_LABEL):
-            model = labels[CONTAINER_IMAGE_NAME_LABEL]
+            model = self._get_model_from_image(labels[CONTAINER_IMAGE_NAME_LABEL])
+            software = self._get_application_from_image(
+                labels[CONTAINER_IMAGE_NAME_LABEL]
+            )
         # Get version
         if labels.get(CONTAINER_IMAGE_VERSION_LABEL):
-            version = labels[CONTAINER_IMAGE_VERSION_LABEL]
+            version = self._normalize_version(labels[CONTAINER_IMAGE_VERSION_LABEL])
+        if not version or version == "":
+            # Get version from image name if not available
+            version = self._get_version_from_image(labels[CONTAINER_IMAGE_NAME_LABEL])
         # Get serial number
         if labels.get(CONTAINER_IMAGE_SERIAL_LABEL):
             serial_number = labels[CONTAINER_IMAGE_SERIAL_LABEL]
