@@ -61,7 +61,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for openmetrics."""
 
-    VERSION = 2
+    VERSION = 3
     title: str
     data: dict[str, Any]
     metadata: MetadataData
@@ -93,15 +93,11 @@ class OpenMetricsConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 )
                 # Extract provider info
                 provider_name = self.metadata.provider_info.name
-                provider_version = self.metadata.provider_info.version
                 # Define entry title
                 host = urllib.parse.urlparse(user_input[CONF_URL]).netloc
                 self.title = host
                 if provider_name:
-                    self.title += f" ({provider_name}"
-                    if provider_version:
-                        self.title += f" {provider_version}"
-                    self.title += ")"
+                    self.title += f" ({provider_name})"
                 # Show resources form
                 return await self.async_step_resources()
             except CannotConnectError as e:

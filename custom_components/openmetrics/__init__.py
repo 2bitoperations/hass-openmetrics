@@ -160,6 +160,29 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         _LOGGER.debug("Updated config entry with new data")
 
+    # Version 2 migration
+    if entry.version == 2:
+        _LOGGER.debug("Starting version 2 migration")
+        version = 3
+        minor_version = 1
+        # Extract provider info
+        provider_name = metadata.provider_info.name
+        # Upgrade title
+        host = urllib.parse.urlparse(url).netloc
+        title = host
+        if provider_name:
+            title += f" ({provider_name})"
+
+        _LOGGER.debug("Updating entry data with new configuration")
+        hass.config_entries.async_update_entry(
+            entry,
+            title=title,
+            data=data,
+            version=version,
+            minor_version=minor_version,
+        )
+        _LOGGER.debug("Updated config entry with new data")
+
     _LOGGER.info(
         "Migration to configuration version %s.%s successful",
         entry.version,
