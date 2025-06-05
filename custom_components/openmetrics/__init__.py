@@ -110,9 +110,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Starting migration process for entry ID: %s", entry.entry_id)
 
     # Skip migration if not needed
-    if entry.version > 1:
+    if entry.version > 2:
         # This means the user has downgraded from a future version
-        _LOGGER.debug("Migration skipped - entry version > 1")
+        _LOGGER.debug("Migration skipped - entry version > 2")
         return False
 
     # Extract the connection data from the config entry
