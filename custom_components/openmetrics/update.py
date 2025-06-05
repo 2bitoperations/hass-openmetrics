@@ -108,36 +108,47 @@ class OpenMetricsUpdateEntity(OpenMetricsBaseEntity, UpdateEntity):
             # Replace invalid characters in the unique ID with underscores
             self.entity_id = f"update.{self._attr_unique_id.replace('.', '_').replace(':', '_').replace('/', '_')}"
 
-    @property
-    def installed_version(self) -> str | None:
-        """Return the installed version."""
+    def __get_resource_data(self) -> dict[str, Any] | None:
+        """Return the resource data."""
         if not self.coordinator.data:
             return None
         resource = self.resource.name
         if not resource:
             return None
+        return self.coordinator.data.get(resource)
+
+    @property
+    def installed_version(self) -> str | None:
+        """Return the installed version."""
+        # Determine the property name based on whether the resource is virtual
         if self.resource.is_virtual:
             property_name = PROPERTY_CURRENTLY_USED_IMAGE_VERSION
         else:
             property_name = PROPERTY_CURRENTLY_INSTALLED_OS_VERSION
-        self._attr_installed_version = self.coordinator.data.get(resource, {}).get(
-            property_name
-        )
-        return self._attr_installed_version
+        # Get the resource data
+        resource_data = self.__get_resource_data()
+        if not resource_data:
+            return None
+        # Get the installed version
+        installed_version = resource_data.get(property_name)
+        if not installed_version:
+            return None
+        return installed_version
 
     @property
     def latest_version(self) -> str | None:
         """Return the latest version."""
-        if not self.coordinator.data:
-            return None
-        resource = self.resource.name
-        if not resource:
-            return None
+        # Determine the property name based on whether the resource is virtual
         if self.resource.is_virtual:
             property_name = PROPERTY_LATEST_AVAILABLE_IMAGE_VERSION
         else:
             property_name = PROPERTY_LATEST_AVAILABLE_OS_VERSION
-        self._attr_latest_version = self.coordinator.data.get(resource, {}).get(
-            property_name
-        )
-        return self._attr_latest_version
+        # Get the resource data
+        resource_data = self.__get_resource_data()
+        if not resource_data:
+            return None
+        # Get the latest version
+        latest_version = resource_data.get(property_name)
+        if not latest_version:
+            return None
+        return latest_version
