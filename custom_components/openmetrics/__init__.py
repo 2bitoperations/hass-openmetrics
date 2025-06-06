@@ -25,6 +25,7 @@ from .client import (
 )
 from .const import CONF_RESOURCES, DOMAIN
 from .coordinator import OpenMetricsDataUpdateCoordinator
+from .entity_manager import OpenMetricsEntityManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,16 +62,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             },
             update_interval=int(entry.data[CONF_SCAN_INTERVAL]),
         )
+        # Create entity manager
+        entity_manager = OpenMetricsEntityManager(hass, entry)
         # Get the host name from the URL
         host = urllib.parse.urlparse(url).netloc
         # Store required entry data in hass domain entry object
         hass.data[DOMAIN][entry.entry_id] = {
             "client": client,
             "coordinator": coordinator,
+            "entity_manager": entity_manager,
             "host": host,
         }
         # Forward setup to used platforms
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # Clean up old data if it exists
+        await entity_manager.remove_orphaned_resources(metadata)
     except CannotConnectError as e:
         _LOGGER.error("Failed to connect: %s", str(e))
         return False
