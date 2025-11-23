@@ -137,22 +137,6 @@ def convert_data_size(
     # Validate if source unit is supported using public method
     if not DataSizeConverter.is_valid_unit(source_unit):
         raise ValueError(f"Unsupported unit: {source_unit}")
-
-    # Map from decimal to binary units
-    binary_equivalent: dict[str | None, str] = {
-        UnitOfInformation.KILOBYTES: UnitOfInformation.KIBIBYTES,
-        UnitOfInformation.MEGABYTES: UnitOfInformation.MEBIBYTES,
-        UnitOfInformation.GIGABYTES: UnitOfInformation.GIBIBYTES,
-        UnitOfInformation.TERABYTES: UnitOfInformation.TEBIBYTES,
-        UnitOfInformation.PETABYTES: UnitOfInformation.PEBIBYTES,
-        UnitOfInformation.EXABYTES: UnitOfInformation.EXBIBYTES,
-        UnitOfInformation.ZETTABYTES: UnitOfInformation.ZEBIBYTES,
-        UnitOfInformation.YOTTABYTES: UnitOfInformation.YOBIBYTES,
-    }
-    # Use binary units for values that are multiples of 64
-    if value % 64 == 0 and value % 10 != 0 and target_unit in binary_equivalent:
-        target_unit = binary_equivalent[target_unit]
-
     # Convert source unit to target unit and return the result
     return DataSizeConverter.convert(value, source_unit, target_unit)
 

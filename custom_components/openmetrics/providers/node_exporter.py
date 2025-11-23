@@ -175,9 +175,6 @@ class NodeExporterProvider(MetricsProvider):
             metric_key=NODE_MEMORY_TOTAL,
         ),
         MetricFilter(
-            metric_key=NODE_MEMORY_SWAP_TOTAL,
-        ),
-        MetricFilter(
             metric_key=NODE_FILESYSTEM_SIZE,
             label_filters={
                 NODE_FILESYSTEM_MOUNTPOINT_LABEL: NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX
@@ -647,12 +644,10 @@ class NodeExporterProvider(MetricsProvider):
         # Set memory size
         if NODE_MEMORY_TOTAL in metrics:
             memory_size_bytes: int = metrics[NODE_MEMORY_TOTAL]
-        if memory_size_bytes and NODE_MEMORY_SWAP_TOTAL in metrics:
-            memory_size_bytes += int(metrics[NODE_MEMORY_SWAP_TOTAL])
             # Convert memory size to appropriate unit
             target_unit = get_appropriate_unit(memory_size_bytes)
             sensor_metrics[PROPERTY_MEMORY_SIZE] = (
-                f"{floor(convert_data_size(memory_size_bytes, target_unit))} {target_unit}"
+                f"{round(convert_data_size(memory_size_bytes, target_unit))} {target_unit}"
             )
         # Return values
         return sensor_metrics
