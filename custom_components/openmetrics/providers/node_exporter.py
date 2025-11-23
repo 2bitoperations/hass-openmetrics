@@ -46,6 +46,7 @@ from .base import MetricsProvider
 # Metrics
 NODE_EXPORTER_BUILD_INFO = "node_exporter_build_info"
 NODE_DEVICE_INFO = "node_device_info"
+NODE_DMI_INFO = "node_dmi_info"
 NODE_UNAME_INFO = "node_uname_info"
 NODE_OS_INFO = "node_os_info"
 NODE_TIME = "node_time_seconds"
@@ -77,6 +78,9 @@ NODE_EXPORTER_OS_VERSION_LABEL = "version"
 NODE_EXPORTER_DEVICE_MODEL_LABEL = "model"
 NODE_EXPORTER_DEVICE_SERIAL_LABEL = "serial"
 NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL = "disk_size"
+NODE_EXPORTER_DMI_PRODUCT_NAME_LABEL = "product_name"
+NODE_EXPORTER_DMI_PRODUCT_VERSION_LABEL = "product_version"
+NODE_EXPORTER_DMI_SYSTEM_VENDOR_LABEL = "system_vendor"
 NODE_CPU_CORE_LABEL = "cpu"
 NODE_CPU_IDLE_SECONDS_LABEL = "mode"
 NODE_CPU_TEMP_LABEL = "type"
@@ -136,6 +140,13 @@ PROVIDER_FILTERS = [
         label_filters={
             NODE_EXPORTER_DEVICE_MODEL_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
             NODE_EXPORTER_DEVICE_SERIAL_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
+        },
+    ),
+    MetricFilter(
+        metric_key=NODE_DMI_INFO,
+        label_filters={
+            NODE_EXPORTER_DMI_SYSTEM_VENDOR_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
+            NODE_EXPORTER_DMI_PRODUCT_NAME_LABEL: NODE_AT_LEAST_ONE_CHARACTER_REGEX,
         },
     ),
 ]
@@ -295,15 +306,36 @@ class NodeExporterProvider(MetricsProvider):
                         NODE_EXPORTER_OS_VERSION_LABEL
                     ]
         # Extract model and serial number
+        elif family.name == NODE_DMI_INFO:
+            for sample in family.samples:
+                model = []
+                # Get model
+                if sample.labels.get(NODE_EXPORTER_DMI_SYSTEM_VENDOR_LABEL):
+                    model.append(sample.labels[NODE_EXPORTER_DMI_SYSTEM_VENDOR_LABEL])
+                if sample.labels.get(NODE_EXPORTER_DMI_PRODUCT_NAME_LABEL):
+                    model.append(sample.labels[NODE_EXPORTER_DMI_PRODUCT_NAME_LABEL])
+                if model:
+                    resource_info.model = " ".join(model)
+                # Get serial number
+                if sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL):
+                    resource_info.serial_number = sample.labels[
+                        NODE_EXPORTER_DEVICE_SERIAL_LABEL
+                    ]
         elif family.name == NODE_DEVICE_INFO:
             for sample in family.samples:
                 # Get model
-                if sample.labels.get(NODE_EXPORTER_DEVICE_MODEL_LABEL):
+                if (
+                    sample.labels.get(NODE_EXPORTER_DEVICE_MODEL_LABEL)
+                    and sample.labels.get(NODE_EXPORTER_DEVICE_MODEL_LABEL) is None
+                ):
                     resource_info.model = sample.labels[
                         NODE_EXPORTER_DEVICE_MODEL_LABEL
                     ]
                 # Get serial number
-                if sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL):
+                if (
+                    sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL)
+                    and sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL) is None
+                ):
                     resource_info.serial_number = sample.labels[
                         NODE_EXPORTER_DEVICE_SERIAL_LABEL
                     ]
