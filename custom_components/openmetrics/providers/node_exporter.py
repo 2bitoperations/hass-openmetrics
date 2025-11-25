@@ -281,92 +281,133 @@ class NodeExporterProvider(MetricsProvider):
     def extract_resource_info(self, family: Metric, resources: dict):
         """Extract and store node resource information."""
         # Initialize resource info for main resource (if not yet initialized)
-        if self.resource_name not in resources:
-            resource_info = ResourceInfoData(type=RESOURCE_TYPE_NODE)
-            resources[self.resource_name] = resource_info
-        else:
-            resource_info = resources[self.resource_name]
-        # Extract resource info
-        if family.name == NODE_UNAME_INFO:
-            for sample in family.samples:
-                nodename = sample.labels.get(NODE_EXPORTER_RESOURCE_LABEL, None)
-                if nodename:
-                    resource_info.name = nodename
-                    self.resource_name = nodename
-        # Extract software
-        elif family.name == NODE_OS_INFO:
-            for sample in family.samples:
-                if sample.labels.get(NODE_EXPORTER_OS_NAME_LABEL):
-                    resource_info.software = sample.labels[NODE_EXPORTER_OS_NAME_LABEL]
-                if sample.labels.get(NODE_EXPORTER_OS_VERSION_LABEL):
-                    resource_info.version = sample.labels[
-                        NODE_EXPORTER_OS_VERSION_LABEL
-                    ]
-        # Extract model and serial number
-        elif family.name == NODE_DMI_INFO:
-            for sample in family.samples:
-                model = []
-                # Get model
-                if sample.labels.get(NODE_EXPORTER_DMI_SYSTEM_VENDOR_LABEL):
-                    model.append(sample.labels[NODE_EXPORTER_DMI_SYSTEM_VENDOR_LABEL])
-                if sample.labels.get(NODE_EXPORTER_DMI_PRODUCT_NAME_LABEL):
-                    model.append(sample.labels[NODE_EXPORTER_DMI_PRODUCT_NAME_LABEL])
-                if model:
-                    resource_info.model = " ".join(model)
-                # Get serial number
-                if sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL):
-                    resource_info.serial_number = sample.labels[
-                        NODE_EXPORTER_DEVICE_SERIAL_LABEL
-                    ]
-        elif family.name == NODE_DEVICE_INFO:
-            for sample in family.samples:
-                # Get model
-                if (
-                    sample.labels.get(NODE_EXPORTER_DEVICE_MODEL_LABEL)
-                    and sample.labels.get(NODE_EXPORTER_DEVICE_MODEL_LABEL) is None
-                ):
-                    resource_info.model = sample.labels[
-                        NODE_EXPORTER_DEVICE_MODEL_LABEL
-                    ]
-                # Get serial number
-                if (
-                    sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL)
-                    and sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL) is None
-                ):
-                    resource_info.serial_number = sample.labels[
-                        NODE_EXPORTER_DEVICE_SERIAL_LABEL
-                    ]
-        # Extract network interfaces
-        elif family.name == NODE_NETWORK_INTERFACE_SPEED:
-            for sample in family.samples:
-                interface_name = sample.labels.get(NODE_NETWORK_INTERFACE_LABEL)
-                if interface_name:
-                    if not resource_info.network_interfaces:
-                        resource_info.network_interfaces = set()
-                    # Add interface name to network interfaces list
-                    if re.match(NODE_NETWORK_INTERFACE_LABEL_REGEX, interface_name):
-                        resource_info.network_interfaces.add(interface_name)
-        # Extract virtual resources and create resource info
+        resource_info = self._get_or_create_resource(resources, self.resource_name)
+
+        # Dispatch to appropriate handler based on metric family name
+        handlers = {
+            NODE_UNAME_INFO: self._handle_uname_info,
+            NODE_OS_INFO: self._handle_os_info,
+            NODE_DMI_INFO: self._handle_dmi_info,
+            NODE_DEVICE_INFO: self._handle_device_info,
+            NODE_NETWORK_INTERFACE_SPEED: self._handle_network_interface,
+        }
+
+        # Execute handler if family name matches
+        if family.name in handlers:
+            handlers[family.name](family, resource_info, resources)
+        # Check if family is a virtual resource metric
         elif family.name in self.__virtual_resource_metric_keys:
-            for sample in family.samples:
-                v_resource_name = sample.labels.get(NODE_CONTAINER_RESOURCE_LABEL)
+            self._handle_virtual_resources(family, resources)
+
+    def _get_or_create_resource(
+        self, resources: dict, resource_name: str
+    ) -> ResourceInfoData:
+        """Get existing resource or create new one."""
+        if resource_name not in resources:
+            resources[resource_name] = ResourceInfoData(type=RESOURCE_TYPE_NODE)
+        return resources[resource_name]
+
+    def _handle_uname_info(
+        self, family: Metric, resource_info: ResourceInfoData, resources: dict
+    ):
+        """Handle NODE_UNAME_INFO metric."""
+        for sample in family.samples:
+            nodename = sample.labels.get(NODE_EXPORTER_RESOURCE_LABEL)
+            if nodename:
+                resource_info.name = nodename
+                self.resource_name = nodename
+
+    def _handle_os_info(
+        self, family: Metric, resource_info: ResourceInfoData, resources: dict
+    ):
+        """Handle NODE_OS_INFO metric."""
+        for sample in family.samples:
+            if sample.labels.get(NODE_EXPORTER_OS_NAME_LABEL):
+                resource_info.software = sample.labels[NODE_EXPORTER_OS_NAME_LABEL]
+            if sample.labels.get(NODE_EXPORTER_OS_VERSION_LABEL):
+                resource_info.version = sample.labels[NODE_EXPORTER_OS_VERSION_LABEL]
+
+    def _handle_dmi_info(
+        self, family: Metric, resource_info: ResourceInfoData, resources: dict
+    ):
+        """Handle NODE_DMI_INFO metric."""
+        for sample in family.samples:
+            model = self._build_model_string(
+                sample.labels.get(NODE_EXPORTER_DMI_SYSTEM_VENDOR_LABEL),
+                sample.labels.get(NODE_EXPORTER_DMI_PRODUCT_NAME_LABEL),
+            )
+            if model:
+                resource_info.model = model
+
+            serial = sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL)
+            if serial:
+                resource_info.serial_number = serial
+
+    def _handle_device_info(
+        self, family: Metric, resource_info: ResourceInfoData, resources: dict
+    ):
+        """Handle NODE_DEVICE_INFO metric."""
+        for sample in family.samples:
+            model = sample.labels.get(NODE_EXPORTER_DEVICE_MODEL_LABEL)
+            if model:
+                resource_info.model = model
+
+            serial = sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL)
+            if serial:
+                resource_info.serial_number = serial
+
+    def _handle_network_interface(
+        self, family: Metric, resource_info: ResourceInfoData, resources: dict
+    ):
+        """Handle NODE_NETWORK_INTERFACE_SPEED metric."""
+        for sample in family.samples:
+            interface_name = sample.labels.get(NODE_NETWORK_INTERFACE_LABEL)
+            if interface_name and re.match(
+                NODE_NETWORK_INTERFACE_LABEL_REGEX, interface_name
+            ):
+                if not resource_info.network_interfaces:
+                    resource_info.network_interfaces = set()
+                resource_info.network_interfaces.add(interface_name)
+
+    def _handle_virtual_resources(self, family: Metric, resources: dict):
+        """Handle virtual resource metrics."""
+        for sample in family.samples:
+            v_resource_name = sample.labels.get(NODE_CONTAINER_RESOURCE_LABEL)
+            if v_resource_name and v_resource_name not in resources:
                 v_resource_image = sample.labels.get(NODE_CONTAINER_IMAGE_LABEL)
-                if v_resource_image:
-                    v_resource_software = self._get_application_from_image(
-                        v_resource_image
-                    )
-                    v_resource_model = self._get_model_from_image(v_resource_image)
-                    v_resource_version = self._get_version_from_image(v_resource_image)
-                if v_resource_name and v_resource_name not in resources:
-                    v_resource_info = ResourceInfoData(
-                        type=RESOURCE_TYPE_CONTAINER,
-                        name=v_resource_name,
-                        software=v_resource_software,
-                        version=v_resource_version,
-                        model=v_resource_model,
-                        is_virtual=True,
-                    )
-                    resources[v_resource_name] = v_resource_info
+                v_resource_info = self._create_virtual_resource(
+                    v_resource_name, v_resource_image
+                )
+                resources[v_resource_name] = v_resource_info
+
+    def _create_virtual_resource(
+        self, name: str, image: str | None
+    ) -> ResourceInfoData:
+        """Create a virtual resource info object."""
+        software = None
+        model = None
+        version = None
+
+        if image:
+            software = self._get_application_from_image(image)
+            model = self._get_model_from_image(image)
+            version = self._get_version_from_image(image)
+
+        return ResourceInfoData(
+            type=RESOURCE_TYPE_CONTAINER,
+            name=name,
+            software=software,
+            model=model,
+            version=version,
+            is_virtual=True,
+        )
+
+    def _build_model_string(
+        self, vendor: str | None, product: str | None
+    ) -> str | None:
+        """Build model string from vendor and product names."""
+        parts = [p for p in [vendor, product] if p]
+        return " ".join(parts) if parts else None
 
     def collect_supported_metric(self, family: Metric, available_metrics: list[str]):
         """Collect supported metric."""
