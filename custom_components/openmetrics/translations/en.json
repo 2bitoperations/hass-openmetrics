@@ -51,18 +51,18 @@
                 }
             },
             "disk_usage_bytes": {
-                "name": "Disk usage",
+                "name": "Filesystem usage ({mountpoint})",
                 "state_attributes": {
                     "disk_size": {
-                        "name": "Disk size"
+                        "name": "Filesystem size"
                     }
                 }
             },
             "disk_usage_pct": {
-                "name": "Disk usage (percent)",
+                "name": "Filesystem usage ({mountpoint}) [percent]",
                 "state_attributes": {
                     "disk_size": {
-                        "name": "Disk size"
+                        "name": "Filesystem size"
                     }
                 }
             },
@@ -75,7 +75,7 @@
                 }
             },
             "memory_usage_pct": {
-                "name": "Memory usage (percent)",
+                "name": "Memory usage [percent]",
                 "state_attributes": {
                     "memory_size": {
                         "name": "Memory size"
@@ -161,11 +161,11 @@
         "metrics": {
             "options": {
                 "cpu_temp_celsius": "CPU temperature",
-                "cpu_usage_pct": "CPU usage %",
+                "cpu_usage_pct": "CPU usage",
                 "disk_usage_bytes": "Disk usage",
-                "disk_usage_pct": "Disk usage (percent)",
+                "disk_usage_pct": "Disk usage [percent]",
                 "memory_usage_bytes": "Memory usage",
-                "memory_usage_pct": "Memory usage (percent)",
+                "memory_usage_pct": "Memory usage [percent]",
                 "network_receive_bytes": "Network receive",
                 "network_transmit_bytes": "Network transmit",
                 "uptime_seconds": "Uptime",

@@ -51,18 +51,18 @@
                 }
             },
             "disk_usage_bytes": {
-                "name": "Festplattennutzung",
+                "name": "Dateisystem-Nutzung ({mountpoint})",
                 "state_attributes": {
                     "disk_size": {
-                        "name": "Festplattengrösse"
+                        "name": "Dateisystem-Grösse"
                     }
                 }
             },
             "disk_usage_pct": {
-                "name": "Festplattennutzung (Prozent)",
+                "name": "Dateisystem-Nutzung ({mountpoint}) [Prozent]",
                 "state_attributes": {
                     "disk_size": {
-                        "name": "Festplattengrösse"
+                        "name": "Dateisystem-Grösse"
                     }
                 }
             },
@@ -75,7 +75,7 @@
                 }
             },
             "memory_usage_pct": {
-                "name": "Arbeitsspeichernutzung (Prozent)",
+                "name": "Arbeitsspeichernutzung [Prozent]",
                 "state_attributes": {
                     "memory_size": {
                         "name": "Arbeitsspeichergrösse"
@@ -163,9 +163,9 @@
                 "cpu_temp_celsius": "CPU-Temperatur",
                 "cpu_usage_pct": "CPU-Auslastung",
                 "disk_usage_bytes": "Festplattennutzung",
-                "disk_usage_pct": "Festplattennutzung (Prozent)",
+                "disk_usage_pct": "Festplattennutzung [Prozent]",
                 "memory_usage_bytes": "Arbeitsspeichernutzung",
-                "memory_usage_pct": "Arbeitspeichernutzung (Prozent)",
+                "memory_usage_pct": "Arbeitspeichernutzung [Prozent]",
                 "network_receive_bytes": "Netzwerkempfang",
                 "network_transmit_bytes": "Netzwerkübertragung",
                 "uptime_seconds": "Laufzeit",
