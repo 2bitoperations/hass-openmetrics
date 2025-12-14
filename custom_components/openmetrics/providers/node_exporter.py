@@ -2,11 +2,10 @@
 
 import re
 from datetime import datetime
-from math import floor
 from time import time
 from typing import Any
 
-from homeassistant.const import UnitOfDataRate, UnitOfInformation
+from homeassistant.const import UnitOfDataRate
 from homeassistant.util import dt as dt_util
 
 from ..const import (
@@ -85,6 +84,7 @@ NODE_CPU_CORE_LABEL = "cpu"
 NODE_CPU_IDLE_SECONDS_LABEL = "mode"
 NODE_CPU_TEMP_LABEL = "type"
 NODE_FILESYSTEM_MOUNTPOINT_LABEL = "mountpoint"
+NODE_FILESYSTEM_DEVICE_LABEL = "device"
 NODE_NETWORK_INTERFACE_LABEL = "device"
 NODE_OS_INSTALLED_VERSION_LABEL = "installed_version"
 NODE_OS_LATEST_VERSION_LABEL = "latest_version"
@@ -97,7 +97,8 @@ NODE_CONTAINER_STATE_STATUS_LABEL = "status"
 NODE_AT_LEAST_ONE_CHARACTER_REGEX = ".+"
 NODE_CPU_IDLE_SECONDS_LABEL_REGEX = "^idle$"
 NODE_CPU_TEMP_LABEL_REGEX = "^cpu-thermal$"
-NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX = "^\\/$"
+NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX = "^(?:\\/[^\\/]*)+$"
+NODE_FILESYSTEM_DEVICE_LABEL_REGEX = "^\\/dev\\/.+"
 NODE_NETWORK_INTERFACE_LABEL_REGEX = "^eth[0-9]+|wlan[0-9]+$"
 # Textfile collector metrics
 METRIC_NODE_OS_UPDATE_INFO = "os_update_info"
@@ -177,13 +178,15 @@ class NodeExporterProvider(MetricsProvider):
         MetricFilter(
             metric_key=NODE_FILESYSTEM_SIZE,
             label_filters={
-                NODE_FILESYSTEM_MOUNTPOINT_LABEL: NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX
+                NODE_FILESYSTEM_MOUNTPOINT_LABEL: NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX,
+                NODE_FILESYSTEM_DEVICE_LABEL: NODE_FILESYSTEM_DEVICE_LABEL_REGEX,
             },
         ),
         MetricFilter(
             metric_key=NODE_FILESYSTEM_FREE,
             label_filters={
-                NODE_FILESYSTEM_MOUNTPOINT_LABEL: NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX
+                NODE_FILESYSTEM_MOUNTPOINT_LABEL: NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX,
+                NODE_FILESYSTEM_DEVICE_LABEL: NODE_FILESYSTEM_DEVICE_LABEL_REGEX,
             },
         ),
         MetricFilter(
@@ -289,6 +292,7 @@ class NodeExporterProvider(MetricsProvider):
             NODE_OS_INFO: self._handle_os_info,
             NODE_DMI_INFO: self._handle_dmi_info,
             NODE_DEVICE_INFO: self._handle_device_info,
+            NODE_FILESYSTEM_SIZE: self._handle_filesystem_mountpoint,
             NODE_NETWORK_INTERFACE_SPEED: self._handle_network_interface,
         }
 
@@ -355,6 +359,23 @@ class NodeExporterProvider(MetricsProvider):
             serial = sample.labels.get(NODE_EXPORTER_DEVICE_SERIAL_LABEL)
             if serial:
                 resource_info.serial_number = serial
+
+    def _handle_filesystem_mountpoint(
+        self, family: Metric, resource_info: ResourceInfoData, resources: dict
+    ):
+        """Handle NODE_FILESYSTEM_MOUNTPOINT_NAME metric."""
+        for sample in family.samples:
+            device = sample.labels.get(NODE_FILESYSTEM_DEVICE_LABEL)
+            if device and re.match(NODE_FILESYSTEM_DEVICE_LABEL_REGEX, device):
+                mountpoint = sample.labels.get(NODE_FILESYSTEM_MOUNTPOINT_LABEL)
+                if mountpoint and re.match(
+                    NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX, mountpoint
+                ):
+                    if not resource_info.filesystem_mountpoints:
+                        resource_info.filesystem_mountpoints = {}
+                    resource_info.filesystem_mountpoints[mountpoint] = (
+                        get_appropriate_unit(sample.value)
+                    )
 
     def _handle_network_interface(
         self, family: Metric, resource_info: ResourceInfoData, resources: dict
@@ -488,10 +509,9 @@ class NodeExporterProvider(MetricsProvider):
             interface = sample.labels[NODE_NETWORK_INTERFACE_LABEL]
             return {interface: sample.value}
         # Storage
-        if metric_key == NODE_DEVICE_INFO:
-            disk_size = sample.labels.get(NODE_EXPORTER_DEVICE_DISK_SIZE_LABEL)
-            if disk_size:
-                return round(convert_data_size(disk_size, UnitOfInformation.BYTES))
+        if metric_key in (NODE_FILESYSTEM_SIZE, NODE_FILESYSTEM_FREE):
+            mountpoint = sample.labels[NODE_FILESYSTEM_MOUNTPOINT_LABEL]
+            return {mountpoint: sample.value}
         # OS update
         if metric_key == NODE_OS_UPDATE_INFO:
             return {
@@ -702,33 +722,28 @@ class NodeExporterProvider(MetricsProvider):
         # Initialize variables
         disk_total_bytes: int | None = None
         disk_usage_bytes: int | None = None
-        # Get values
         if NODE_FILESYSTEM_SIZE in metrics:
-            disk_total_bytes = metrics[NODE_FILESYSTEM_SIZE]
-            disk_free_bytes = metrics[NODE_FILESYSTEM_FREE]
-            disk_usage_bytes = disk_total_bytes - disk_free_bytes
-        # Calculate disk usage
-        if (
-            disk_total_bytes is not None
-            and disk_total_bytes > 0
-            and disk_usage_bytes is not None
-        ):
-            sensor_metrics[METRIC_DISK_USAGE_BYTES] = disk_usage_bytes
-            sensor_metrics[METRIC_DISK_USAGE_PCT] = (
-                disk_usage_bytes / disk_total_bytes * 100
-            )
-        # Set disk size
-        if disk_total_bytes:
-            target_unit = get_appropriate_unit(disk_total_bytes)
-            sensor_metrics[PROPERTY_DISK_SIZE] = (
-                f"{floor(convert_data_size(disk_total_bytes, target_unit))} {target_unit}"
-            )
-        if NODE_DEVICE_INFO in metrics:
-            disk_size = metrics[NODE_DEVICE_INFO]
-            target_unit = get_appropriate_unit(disk_size)
-            sensor_metrics[PROPERTY_DISK_SIZE] = (
-                f"{floor(convert_data_size(disk_size, target_unit))} {target_unit}"
-            )
+            if PROPERTY_DISK_SIZE not in sensor_metrics:
+                sensor_metrics[PROPERTY_DISK_SIZE] = {}
+            for mountpoint in metrics[NODE_FILESYSTEM_SIZE]:
+                # Get values
+                disk_total_bytes = metrics[NODE_FILESYSTEM_SIZE][mountpoint]
+                disk_free_bytes = metrics[NODE_FILESYSTEM_FREE][mountpoint]
+                disk_usage_bytes = disk_total_bytes - disk_free_bytes
+                # Calculate disk usage
+                if disk_total_bytes is not None and disk_total_bytes > 0:
+                    if disk_usage_bytes is not None:
+                        sensor_metrics[f"{METRIC_DISK_USAGE_BYTES}_{mountpoint}"] = (
+                            disk_usage_bytes
+                        )
+                        sensor_metrics[f"{METRIC_DISK_USAGE_PCT}_{mountpoint}"] = (
+                            disk_usage_bytes / disk_total_bytes * 100
+                        )
+                    # Set disk size
+                    target_unit = get_appropriate_unit(disk_total_bytes)
+                    sensor_metrics[PROPERTY_DISK_SIZE][mountpoint] = (
+                        f"{round(convert_data_size(disk_total_bytes, target_unit))} {target_unit}"
+                    )
         # Return values
         return sensor_metrics
 

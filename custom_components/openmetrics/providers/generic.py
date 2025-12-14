@@ -50,9 +50,12 @@ class GenericProvider(MetricsProvider):
     # Label regexes
     RESOURCE_LABEL_REGEX = "^(?:node)?name$"
     NETWORK_INTERFACE_LABEL_REGEX = "^(?:device|interface)$"
+    FILESYSTEM_DEVICE_LABEL_REGEX = "^device$"
+    FILESYSTEM_MOUNTPOINT_LABEL_REGEX = "^mountpoint$"
     # Value regexes
     AT_LEAST_ONE_CHARACTER_REGEX = ".+"
     NETWORK_INTERFACE_VALUE_REGEX = "^eth[0-9]+|wlan[0-9]+$"
+    FILESYSTEM_DEVICE_VALUE_REGEX = "^\\/dev\\/.+"
     FILESYSTEM_MOUNTPOINT_VALUE_REGEX = "^\\/$"
 
     metric_filters = [
@@ -146,61 +149,116 @@ class GenericProvider(MetricsProvider):
         self.provider_filters.extend(CADVISOR_PROVIDER_FILTERS)
         self.provider_filters.extend(NODE_EXPORTER_PROVIDER_FILTERS)
 
+    def _get_or_create_resource(
+        self, resources: dict, resource_name: str
+    ) -> ResourceInfoData:
+        """Get existing resource or create new one."""
+        if resource_name not in resources:
+            resources[resource_name] = ResourceInfoData(
+                type=RESOURCE_TYPE_GENERIC, name=resource_name
+            )
+        return resources[resource_name]
+
+    def _handle_resource_info(self, family: Metric, resources: dict):
+        """Handle resource info metric."""
+        for sample in family.samples:
+            for label in sample.labels:
+                if re.match(self.RESOURCE_LABEL_REGEX, label):
+                    name = sample.labels.get(label)
+                    if name is not None and name != "" and name not in resources:
+                        if self.resource_name in resources:
+                            resources[self.resource_name].name = name
+                        else:
+                            self._get_or_create_resource(resources, name)
+                        self.resource_name = name
+
+    def _handle_time_seconds(self, family: Metric, resources: dict):
+        """Handle time seconds metric."""
+        for sample in family.samples:
+            for label in sample.labels:
+                if re.match(self.RESOURCE_LABEL_REGEX, label):
+                    name = sample.labels.get(label)
+                    if name is not None and name != "" and name not in resources:
+                        self._get_or_create_resource(resources, name)
+
+    def _handle_filesystem_mountpoint(self, family: Metric, resources: dict):
+        """Handle filesystem mountpoint metric."""
+        for sample in family.samples:
+            device = None
+            mountpoint = None
+            for label in sample.labels:
+                # Ensure resource is existing
+                if re.match(self.RESOURCE_LABEL_REGEX, label):
+                    name = sample.labels.get(label)
+                # Collect device label
+                if re.match(self.FILESYSTEM_DEVICE_LABEL_REGEX, label):
+                    device = sample.labels.get(label)
+                # Collect mountpoint label
+                if re.match(self.FILESYSTEM_MOUNTPOINT_LABEL_REGEX, label):
+                    mountpoint = sample.labels.get(label)
+            if name is None:
+                name = self.resource_name
+            if name == "":
+                continue
+            # Validate and store filesystem
+            if device and re.match(self.FILESYSTEM_DEVICE_VALUE_REGEX, device):
+                resource_info = self._get_or_create_resource(resources, name)
+                if not resource_info.filesystem_mountpoints:
+                    resource_info.filesystem_mountpoints = {}
+                if mountpoint and re.match(
+                    self.FILESYSTEM_MOUNTPOINT_VALUE_REGEX, mountpoint
+                ):
+                    resource_info.filesystem_mountpoints[mountpoint] = (
+                        get_appropriate_unit(sample.value)
+                    )
+                else:
+                    resource_info.filesystem_mountpoints[device] = get_appropriate_unit(
+                        sample.value
+                    )
+
+    def _handle_network_interfaces(self, family: Metric, resources: dict):
+        """Handle network interfaces metric."""
+        for sample in family.samples:
+            network_interfaces = set()
+            name = None
+            for label in sample.labels:
+                # Ensure resource is existing
+                if re.match(self.RESOURCE_LABEL_REGEX, label):
+                    name = sample.labels.get(label)
+                # Collect network interfaces
+                if re.match(self.NETWORK_INTERFACE_LABEL_REGEX, label):
+                    interface = sample.labels.get(label)
+                    if interface is not None and interface != "":
+                        if re.match(self.NETWORK_INTERFACE_VALUE_REGEX, interface):
+                            network_interfaces.add(interface)
+            if name is None and network_interfaces:
+                name = self.resource_name
+            if name and network_interfaces:
+                resource_info = self._get_or_create_resource(resources, name)
+                if not resource_info.network_interfaces:
+                    resource_info.network_interfaces = network_interfaces
+                else:
+                    for interface in network_interfaces:
+                        resource_info.network_interfaces.add(interface)
+
     def extract_provider_info(self, family: Metric, provider_info: ProviderInfoData):
         """Extract provider information."""
 
     def extract_resource_info(self, family: Metric, resources: dict):
         """Extract resource information."""
-        # Extract resource info from provider info
-        if re.match(self.RESOURCE_REGEX, family.name, re.IGNORECASE):
-            for sample in family.samples:
-                for label in sample.labels:
-                    if re.match(self.RESOURCE_LABEL_REGEX, label):
-                        name = sample.labels.get(label)
-                        if name is not None and name != "" and name not in resources:
-                            if self.resource_name in resources:
-                                resources[self.resource_name].name = name
-                            else:
-                                resources[name] = ResourceInfoData(
-                                    type=RESOURCE_TYPE_GENERIC, name=name
-                                )
-                            self.resource_name = name
-        # Extract resource info from start time
-        elif re.match(self.TIME_SECONDS_REGEX, family.name, re.IGNORECASE):
-            for sample in family.samples:
-                for label in sample.labels:
-                    if re.match(self.RESOURCE_LABEL_REGEX, label):
-                        name = sample.labels.get(label)
-                        if name is not None and name != "" and name not in resources:
-                            resources[name] = ResourceInfoData(
-                                type=RESOURCE_TYPE_GENERIC, name=name
-                            )
-        # Extract network interfaces
-        elif re.match(self.NETWORK_BYTES_REGEX, family.name, re.IGNORECASE):
-            for sample in family.samples:
-                network_interfaces = set()
-                name = None
-                for label in sample.labels:
-                    # Ensure resource is existing
-                    if re.match(self.RESOURCE_LABEL_REGEX, label):
-                        name = sample.labels.get(label)
-                    # Collect network interfaces
-                    if re.match(self.NETWORK_INTERFACE_LABEL_REGEX, label):
-                        interface = sample.labels.get(label)
-                        if interface is not None and interface != "":
-                            if re.match(self.NETWORK_INTERFACE_VALUE_REGEX, interface):
-                                network_interfaces.add(interface)
-                if name is None and network_interfaces:
-                    name = self.resource_name
-                if name and network_interfaces:
-                    if name not in resources:
-                        resources[name] = ResourceInfoData(
-                            type=RESOURCE_TYPE_GENERIC, name=name
-                        )
-                        resources[name].network_interfaces = network_interfaces
-                    else:
-                        for interface in network_interfaces:
-                            resources[name].network_interfaces.add(interface)
+        # Dispatch to appropriate handler based on metric family name
+        handlers = {
+            self.RESOURCE_REGEX: self._handle_resource_info,
+            self.TIME_SECONDS_REGEX: self._handle_time_seconds,
+            self.DISK_BYTES_REGEX: self._handle_filesystem_mountpoint,
+            self.NETWORK_BYTES_REGEX: self._handle_network_interfaces,
+        }
+
+        # Execute handler if family name matches
+        for regex_pattern, handler in handlers.items():
+            if re.match(regex_pattern, family.name, re.IGNORECASE):
+                handler(family, resources)
+                break
 
     def collect_supported_metric(self, family: Metric, available_metrics: list[str]):
         """Collect supported metrics."""
@@ -293,6 +351,17 @@ class GenericProvider(MetricsProvider):
             cpu = sample.labels.get("cpu")
             if cpu:
                 return {cpu: sample.value}
+        # Storage
+        if re.match(self.DISK_BYTES_REGEX, metric_key, re.IGNORECASE):
+            for label in sample.labels:
+                if re.match(self.FILESYSTEM_MOUNTPOINT_LABEL_REGEX, label):
+                    mountpoint = sample.labels.get(label)
+                    if mountpoint is not None and mountpoint != "":
+                        return {mountpoint: sample.value}
+                if re.match(self.FILESYSTEM_DEVICE_LABEL_REGEX, label):
+                    device = sample.labels.get(label)
+                    if device is not None and device != "":
+                        return {device: sample.value}
         # Network
         if re.match(self.NETWORK_BYTES_REGEX, metric_key, re.IGNORECASE):
             for label in sample.labels:
@@ -536,21 +605,44 @@ class GenericProvider(MetricsProvider):
             if disk_total_bytes is not None and disk_free_bytes is not None:
                 disk_usage_bytes = disk_total_bytes - disk_free_bytes
         # Common calculation for disk usage percentage
-        if (
-            disk_total_bytes is not None
-            and disk_total_bytes > 0
-            and disk_usage_bytes is not None
-        ):
-            disk_usage_pct = disk_usage_bytes / disk_total_bytes * 100
-            disk_usage_pct = min(disk_usage_pct, 100)
-            sensor_metrics[METRIC_DISK_USAGE_PCT] = disk_usage_pct
-            sensor_metrics[METRIC_DISK_USAGE_BYTES] = disk_usage_bytes
+        if isinstance(disk_total_bytes, dict) and isinstance(disk_usage_bytes, dict):
+            # Per-filesystem metrics
+            for filesystem in disk_total_bytes:
+                total_bytes = disk_total_bytes.get(filesystem)
+                usage_bytes = disk_usage_bytes.get(filesystem)
+                if (
+                    total_bytes is not None
+                    and total_bytes > 0
+                    and usage_bytes is not None
+                ):
+                    disk_usage_pct = usage_bytes / total_bytes * 100
+                    disk_usage_pct = min(disk_usage_pct, 100)
+                    sensor_metrics[f"{METRIC_DISK_USAGE_PCT}_{filesystem}"] = (
+                        disk_usage_pct
+                    )
+                    sensor_metrics[f"{METRIC_DISK_USAGE_BYTES}_{filesystem}"] = (
+                        usage_bytes
+                    )
         # Set disk size
         if disk_total_bytes:
-            target_unit = get_appropriate_unit(disk_total_bytes)
-            sensor_metrics[PROPERTY_DISK_SIZE] = (
-                f"{floor(convert_data_size(disk_total_bytes, target_unit))} {target_unit}"
-            )
+            # Check if it's a dict (per-device/per-mountpoint) or scalar (single disk)
+            if isinstance(disk_total_bytes, dict):
+                # Per-device/per-mountpoint metrics
+                if PROPERTY_DISK_SIZE not in sensor_metrics:
+                    sensor_metrics[PROPERTY_DISK_SIZE] = {}
+                for filesystem in disk_total_bytes:
+                    total_bytes = disk_total_bytes.get(filesystem)
+                    if total_bytes:
+                        target_unit = get_appropriate_unit(total_bytes)
+                        sensor_metrics[PROPERTY_DISK_SIZE][filesystem] = (
+                            f"{round(convert_data_size(total_bytes, target_unit))} {target_unit}"
+                        )
+            else:
+                # Single disk (scalar)
+                target_unit = get_appropriate_unit(disk_total_bytes)
+                sensor_metrics[PROPERTY_DISK_SIZE] = (
+                    f"{round(convert_data_size(disk_total_bytes, target_unit))} {target_unit}"
+                )
         # Return values
         return sensor_metrics
 

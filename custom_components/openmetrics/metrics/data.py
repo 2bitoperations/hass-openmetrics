@@ -1,6 +1,7 @@
 """Data classes for metrics."""
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -25,6 +26,7 @@ class ResourceInfoData:
     is_virtual: bool = False
     via_resource: str | None = None
     network_interfaces: set[str] | None = None
+    filesystem_mountpoints: dict[str, Any] | None = None
 
 
 @dataclass

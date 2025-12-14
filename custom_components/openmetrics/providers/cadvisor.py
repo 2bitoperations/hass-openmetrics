@@ -54,10 +54,12 @@ CONTAINER_IMAGE_NAME_LABEL = "image"
 CONTAINER_IMAGE_VERSION_LABEL = "container_label_org_opencontainers_image_version"
 CONTAINER_IMAGE_SERIAL_LABEL = "container_label_org_opencontainers_image_revision"
 CONTAINER_NETWORK_INTERFACE_LABEL = "interface"
+CONTAINER_FILESYSTEM_DEVICE_LABEL = "device"
 MACHINE_ID_LABEL = "machine_id"
 # Regex
 CONTAINER_AT_LEAST_ONE_CHARACTER_REGEX = ".+"
 CONTAINER_NETWORK_INTERFACE_LABEL_REGEX = "^eth[0-9]+|wlan[0-9]+$"
+CONTAINER_FILESYSTEM_DEVICE_LABEL_REGEX = "^\\/dev\\/.+"
 
 PROVIDER_FILTERS = [
     MetricFilter(
@@ -194,9 +196,11 @@ class CadvisorProvider(MetricsProvider):
         # Get version
         if labels.get(CONTAINER_IMAGE_VERSION_LABEL):
             version = self._normalize_version(labels[CONTAINER_IMAGE_VERSION_LABEL])
-        if not version or version == "":
-            # Get version from image name if not available
-            version = self._get_version_from_image(labels[CONTAINER_IMAGE_NAME_LABEL])
+            if not version or version == "":
+                # Get version from image name if not available
+                version = self._get_version_from_image(
+                    labels[CONTAINER_IMAGE_NAME_LABEL]
+                )
         # Get serial number
         if labels.get(CONTAINER_IMAGE_SERIAL_LABEL):
             serial_number = labels[CONTAINER_IMAGE_SERIAL_LABEL]
@@ -215,32 +219,76 @@ class CadvisorProvider(MetricsProvider):
         if family.name == CADVISOR_VERSION_INFO and family.samples:
             provider_info.version = family.samples[0].labels[CADVISOR_VERSION_LABEL]
 
+    def _get_or_create_resource(
+        self, resources: dict, resource_name: str, labels: dict
+    ) -> ResourceInfoData:
+        """Get existing resource or create new one."""
+        if resource_name not in resources:
+            resources[resource_name] = self.__create_resource_info(
+                resource_name, labels
+            )
+        return resources[resource_name]
+
+    def _handle_container_start_time(self, family: Metric, resources: dict):
+        """Handle CONTAINER_START_TIME metric."""
+        for sample in family.samples:
+            name = sample.labels.get(CADVISOR_RESOURCE_LABEL)
+            if name:
+                self._get_or_create_resource(resources, name, sample.labels)
+
+    def _handle_filesystem_mountpoint(self, family: Metric, resources: dict):
+        """Handle filesystem mountpoint metric."""
+        for sample in family.samples:
+            name = sample.labels.get(CADVISOR_RESOURCE_LABEL)
+            device = sample.labels.get(CONTAINER_FILESYSTEM_DEVICE_LABEL)
+            # Validate and store filesystem device
+            if (
+                name
+                and device
+                and re.match(CONTAINER_FILESYSTEM_DEVICE_LABEL_REGEX, device)
+            ):
+                # Ensure resource is existing
+                resource_info = self._get_or_create_resource(
+                    resources, name, sample.labels
+                )
+                # Collect filesystems
+                if not resource_info.filesystem_mountpoints:
+                    resource_info.filesystem_mountpoints = {}
+                resource_info.filesystem_mountpoints[device] = get_appropriate_unit(
+                    sample.value
+                )
+
+    def _handle_network_interfaces(self, family: Metric, resources: dict):
+        """Handle network interface metrics."""
+        for sample in family.samples:
+            name = sample.labels.get(CADVISOR_RESOURCE_LABEL)
+            interface = sample.labels.get(CONTAINER_NETWORK_INTERFACE_LABEL)
+            if name and interface:
+                # Ensure resource is existing
+                resource_info = self._get_or_create_resource(
+                    resources, name, sample.labels
+                )
+                if resource_info.network_interfaces is None:
+                    resource_info.network_interfaces = set()
+                # Collect interfaces
+                if interface and re.match(
+                    CONTAINER_NETWORK_INTERFACE_LABEL_REGEX, interface
+                ):
+                    resource_info.network_interfaces.add(interface)
+
     def extract_resource_info(self, family: Metric, resources: dict):
         """Extract and store container resource information."""
-        # Extract resource info from start time
-        if family.name == CONTAINER_START_TIME:
-            for sample in family.samples:
-                name = sample.labels.get(CADVISOR_RESOURCE_LABEL)
-                if name and name not in resources:
-                    resources[name] = self.__create_resource_info(name, sample.labels)
-        # Extract network interfaces
-        elif family.name in (CONTAINER_NETWORK_RECEIVE, CONTAINER_NETWORK_TRANSMIT):
-            for sample in family.samples:
-                name = sample.labels.get(CADVISOR_RESOURCE_LABEL)
-                interface = sample.labels.get(CONTAINER_NETWORK_INTERFACE_LABEL)
-                if name and interface:
-                    # Ensure resource is existing
-                    if name not in resources:
-                        resources[name] = self.__create_resource_info(
-                            name, sample.labels
-                        )
-                        resources[name].network_interfaces = set()
-                    elif resources[name].network_interfaces is None:
-                        resources[name].network_interfaces = set()
-                    # Collect interfaces
-                    if interface is not None and interface != "":
-                        if re.match(CONTAINER_NETWORK_INTERFACE_LABEL_REGEX, interface):
-                            resources[name].network_interfaces.add(interface)
+        # Dispatch to appropriate handler based on metric family name
+        handlers = {
+            CONTAINER_START_TIME: self._handle_container_start_time,
+            CONTAINER_FS_LIMIT: self._handle_filesystem_mountpoint,
+            CONTAINER_NETWORK_RECEIVE: self._handle_network_interfaces,
+            CONTAINER_NETWORK_TRANSMIT: self._handle_network_interfaces,
+        }
+
+        # Execute handler if family name matches
+        if family.name in handlers:
+            handlers[family.name](family, resources)
 
     def collect_supported_metric(self, family: Metric, available_metrics: list[str]):
         """Collect supported metrics."""
@@ -285,6 +333,10 @@ class CadvisorProvider(MetricsProvider):
         if metric_key == CONTAINER_CPU_USAGE:
             cpu = sample.labels[CONTAINER_CPU_CORE_LABEL]
             return {cpu: sample.value}
+        # Storage
+        if metric_key in (CONTAINER_FS_USAGE, CONTAINER_FS_LIMIT):
+            device = sample.labels[CONTAINER_FILESYSTEM_DEVICE_LABEL]
+            return {device: sample.value}
         # Network
         if metric_key in (CONTAINER_NETWORK_RECEIVE, CONTAINER_NETWORK_TRANSMIT):
             interface = sample.labels[CONTAINER_NETWORK_INTERFACE_LABEL]
@@ -428,22 +480,30 @@ class CadvisorProvider(MetricsProvider):
         # Initialize variables
         disk_total_bytes: int | None = None
         disk_usage_bytes: int | None = None
-        # Get values
         if CONTAINER_FS_LIMIT in metrics:
-            disk_total_bytes = metrics[CONTAINER_FS_LIMIT]
-            disk_usage_bytes = metrics[CONTAINER_FS_USAGE]
-        # Calculate disk usage
-        if disk_total_bytes is not None and disk_usage_bytes is not None:
-            sensor_metrics[METRIC_DISK_USAGE_BYTES] = disk_usage_bytes
-            sensor_metrics[METRIC_DISK_USAGE_PCT] = (
-                disk_usage_bytes / disk_total_bytes * 100
-            )
-        # Set disk size
-        if disk_total_bytes:
-            target_unit = get_appropriate_unit(disk_total_bytes)
-            sensor_metrics[PROPERTY_DISK_SIZE] = (
-                f"{floor(convert_data_size(disk_total_bytes, target_unit))} {target_unit}"
-            )
+            if PROPERTY_DISK_SIZE not in sensor_metrics:
+                sensor_metrics[PROPERTY_DISK_SIZE] = {}
+            for device in metrics[CONTAINER_FS_LIMIT]:
+                # Get values
+                disk_total_bytes = metrics[CONTAINER_FS_LIMIT].get(device)
+                disk_usage_bytes = metrics[CONTAINER_FS_USAGE].get(device)
+                # Calculate disk usage per device
+                if (
+                    disk_total_bytes is not None
+                    and disk_total_bytes > 0
+                    and disk_usage_bytes is not None
+                ):
+                    sensor_metrics[f"{METRIC_DISK_USAGE_BYTES}_{device}"] = (
+                        disk_usage_bytes
+                    )
+                    sensor_metrics[f"{METRIC_DISK_USAGE_PCT}_{device}"] = (
+                        disk_usage_bytes / disk_total_bytes * 100
+                    )
+                    # Set disk size per device
+                    target_unit = get_appropriate_unit(disk_total_bytes)
+                    sensor_metrics[PROPERTY_DISK_SIZE][device] = (
+                        f"{round(convert_data_size(disk_total_bytes, target_unit))} {target_unit}"
+                    )
         # Return values
         return sensor_metrics
 

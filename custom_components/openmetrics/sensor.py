@@ -206,12 +206,29 @@ def create_resource_sensors(
             ):
                 for interface in resource.network_interfaces:
                     # Recreate description with interface as translation placeholder
-                    desc = add_translation_placeholders_to_description(
-                        description, {"interface": interface}
+                    desc = create_modified_sensor_description(
+                        description, translation_placeholders={"interface": interface}
                     )
                     # Create sensor with modified description and identity
                     sensor = OpenMetricsSensor(
                         coordinator, desc, device_info, interface
+                    )
+                    sensors.append(sensor)
+            elif (
+                key in (METRIC_DISK_USAGE_BYTES, METRIC_DISK_USAGE_PCT)
+                and resource.filesystem_mountpoints
+            ):
+                for mountpoint, unit in resource.filesystem_mountpoints.items():
+                    changes = {"translation_placeholders": {"mountpoint": mountpoint}}
+                    # For disk usage bytes, suggest the appropriate unit
+                    if key == METRIC_DISK_USAGE_BYTES:
+                        changes["suggested_unit_of_measurement"] = unit
+                    # Recreate description with defined changes
+                    desc = create_modified_sensor_description(description, changes)
+
+                    # Create sensor with modified description and identity
+                    sensor = OpenMetricsSensor(
+                        coordinator, desc, device_info, mountpoint
                     )
                     sensors.append(sensor)
             # Create other sensors
@@ -221,24 +238,57 @@ def create_resource_sensors(
     return sensors
 
 
-def add_translation_placeholders_to_description(
-    description: SensorEntityDescription, placeholder: dict[str, str]
+def create_modified_sensor_description(
+    description: SensorEntityDescription,
+    changes: dict[str, Any] | None = None,
+    **kwargs: Any,
 ) -> SensorEntityDescription:
-    """Add translation placeholders to the sensor description."""
+    """Create a new SensorEntityDescription with modified attributes.
+
+    This function allows overwriting any SensorEntityDescription property.
+    Can accept changes either as a dict or as keyword arguments.
+    For translation_placeholders, pass a dict that will be merged with existing ones.
+    To replace translation_placeholders entirely, use a special key '_replace_placeholders'.
+    """
+    # Merge dict changes with keyword arguments (kwargs take precedence)
+    if changes is None:
+        changes = {}
+    else:
+        changes = changes.copy()  # Avoid modifying the original dict
+    changes.update(kwargs)
+
+    # Handle translation placeholders merging
     translation_placeholders = {}
     if description.translation_placeholders:
         translation_placeholders.update(description.translation_placeholders)
-    translation_placeholders.update(placeholder)
+
+    # Check if we should replace placeholders entirely
+    if "_replace_placeholders" in changes:
+        translation_placeholders = changes.pop("_replace_placeholders") or {}
+    elif "translation_placeholders" in changes:
+        # Merge with existing placeholders
+        if changes["translation_placeholders"]:
+            translation_placeholders.update(changes["translation_placeholders"])
+        changes.pop("translation_placeholders")
+
     return SensorEntityDescription(
-        key=description.key,
-        icon=description.icon,
-        device_class=description.device_class,
-        state_class=description.state_class,
-        native_unit_of_measurement=description.native_unit_of_measurement,
-        suggested_unit_of_measurement=description.suggested_unit_of_measurement,
-        suggested_display_precision=description.suggested_display_precision,
-        translation_key=description.translation_key,
-        translation_placeholders=translation_placeholders,
+        key=changes.get("key", description.key),
+        icon=changes.get("icon", description.icon),
+        device_class=changes.get("device_class", description.device_class),
+        state_class=changes.get("state_class", description.state_class),
+        native_unit_of_measurement=changes.get(
+            "native_unit_of_measurement", description.native_unit_of_measurement
+        ),
+        suggested_unit_of_measurement=changes.get(
+            "suggested_unit_of_measurement", description.suggested_unit_of_measurement
+        ),
+        suggested_display_precision=changes.get(
+            "suggested_display_precision", description.suggested_display_precision
+        ),
+        translation_key=changes.get("translation_key", description.translation_key),
+        translation_placeholders=translation_placeholders
+        if translation_placeholders
+        else None,
     )
 
 
@@ -345,7 +395,12 @@ class OpenMetricsSensor(OpenMetricsBaseEntity, SensorEntity):
                 METRIC_DISK_USAGE_BYTES,
                 METRIC_DISK_USAGE_PCT,
             ):
-                return {PROPERTY_DISK_SIZE: resource_data.get(PROPERTY_DISK_SIZE)}
+                disk_sizes = resource_data.get(PROPERTY_DISK_SIZE)
+                if self.identity and disk_sizes:
+                    # Return the disk size for the specific mountpoint
+                    if self.identity in disk_sizes:
+                        # Value of PROPERTY_DISK_SIZE is the translation key
+                        return {PROPERTY_DISK_SIZE: disk_sizes[self.identity]}
             # Set the network attribute
             if self.entity_description.key in (
                 METRIC_NETWORK_RECEIVE_BYTES,
@@ -355,6 +410,6 @@ class OpenMetricsSensor(OpenMetricsBaseEntity, SensorEntity):
                 if network_speed:
                     # Return the network speed for the specific interface
                     if self.identity and self.identity in network_speed:
-                        # "network_speed" is the translation key
-                        return {"network_speed": network_speed[self.identity]}
+                        # Value of PROPERTY_NETWORK_SPEED is the translation key
+                        return {PROPERTY_NETWORK_SPEED: network_speed[self.identity]}
             return None

@@ -82,7 +82,7 @@ class DataRateConverter(BaseUnitConverter):
         return unit in cls._UNIT_CONVERSION
 
 
-def get_appropriate_unit(data_size_bytes):
+def get_appropriate_unit(data_size_bytes) -> str:
     """Determine the most appropriate unit for a given byte size."""
     # Map length to decimal units
     decimal_units = [
