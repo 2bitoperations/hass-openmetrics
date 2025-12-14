@@ -83,6 +83,8 @@ NODE_EXPORTER_DMI_SYSTEM_VENDOR_LABEL = "system_vendor"
 NODE_CPU_CORE_LABEL = "cpu"
 NODE_CPU_IDLE_SECONDS_LABEL = "mode"
 NODE_CPU_TEMP_LABEL = "type"
+NODE_HWMON_TEMP_CHIP_LABEL = "chip"
+NODE_HWMON_TEMP_SENSOR_LABEL = "sensor"
 NODE_FILESYSTEM_MOUNTPOINT_LABEL = "mountpoint"
 NODE_FILESYSTEM_DEVICE_LABEL = "device"
 NODE_NETWORK_INTERFACE_LABEL = "device"
@@ -97,6 +99,8 @@ NODE_CONTAINER_STATE_STATUS_LABEL = "status"
 NODE_AT_LEAST_ONE_CHARACTER_REGEX = ".+"
 NODE_CPU_IDLE_SECONDS_LABEL_REGEX = "^idle$"
 NODE_CPU_TEMP_LABEL_REGEX = "^cpu-thermal$"
+NODE_HWMON_TEMP_CHIP_LABEL_REGEX = "^.*coretemp_\\d+$"
+NODE_HWMON_TEMP_SENSOR_LABEL_REGEX = "^temp1$"
 NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX = "^(?:\\/[^\\/]*)+$"
 NODE_FILESYSTEM_DEVICE_LABEL_REGEX = "^\\/dev\\/.+"
 NODE_NETWORK_INTERFACE_LABEL_REGEX = "^eth[0-9]+|wlan[0-9]+$"
@@ -167,6 +171,13 @@ class NodeExporterProvider(MetricsProvider):
             metric_key=NODE_CPU_IDLE_SECONDS,
             label_filters={
                 NODE_CPU_IDLE_SECONDS_LABEL: NODE_CPU_IDLE_SECONDS_LABEL_REGEX
+            },
+        ),
+        MetricFilter(
+            metric_key=NODE_HWMON_TEMP,
+            label_filters={
+                NODE_HWMON_TEMP_CHIP_LABEL: NODE_HWMON_TEMP_CHIP_LABEL_REGEX,
+                NODE_HWMON_TEMP_SENSOR_LABEL: NODE_HWMON_TEMP_SENSOR_LABEL_REGEX,
             },
         ),
         MetricFilter(
@@ -247,6 +258,7 @@ class NodeExporterProvider(MetricsProvider):
     found_metrics = {
         NODE_CPU_IDLE_SECONDS: False,
         NODE_CPU_TEMP: False,
+        NODE_HWMON_TEMP: False,
         NODE_MEMORY_TOTAL: False,
         NODE_MEMORY_AVAILABLE: False,
         NODE_FILESYSTEM_SIZE: False,
@@ -437,7 +449,7 @@ class NodeExporterProvider(MetricsProvider):
             self.found_metrics[family.name] = True
             if family.name == NODE_CPU_IDLE_SECONDS:
                 self._add_str_to_list_uniquely(METRIC_CPU_USAGE_PCT, available_metrics)
-            elif family.name == NODE_CPU_TEMP:
+            elif family.name in (NODE_CPU_TEMP, NODE_HWMON_TEMP):
                 self._add_str_to_list_uniquely(METRIC_CPU_TEMP, available_metrics)
             elif family.name == NODE_BOOT_TIME:
                 self._add_str_to_list_uniquely(METRIC_UPTIME_SECONDS, available_metrics)
@@ -559,6 +571,8 @@ class NodeExporterProvider(MetricsProvider):
             # CPU temperature
             if NODE_CPU_TEMP in metrics and sensor_metrics:
                 sensor_metrics[METRIC_CPU_TEMP] = metrics[NODE_CPU_TEMP]
+            elif NODE_HWMON_TEMP in metrics and sensor_metrics:
+                sensor_metrics[METRIC_CPU_TEMP] = metrics[NODE_HWMON_TEMP]
 
             # OS update
             if NODE_OS_UPDATE_INFO in metrics and sensor_metrics:
