@@ -41,6 +41,7 @@ from .const import (
     PROPERTY_MEMORY_SIZE,
     PROPERTY_NETWORK_SPEED,
 )
+from .coordinator import OpenMetricsDataUpdateCoordinator
 from .entity import OpenMetricsBaseEntity, async_setup_entities, create_device_info
 from .metrics.data import ResourceInfoData
 from .providers.node_exporter import (
@@ -161,15 +162,6 @@ VIRTUAL_SENSORS = {
         translation_key=METRIC_VIRTUAL_RESOURCE_UPTIME,
     ),
 }
-
-
-def get_coordinator_class():
-    """Return the coordinator class."""
-    from custom_components.openmetrics.coordinator import (
-        OpenMetricsDataUpdateCoordinator,
-    )
-
-    return OpenMetricsDataUpdateCoordinator
 
 
 async def async_setup_entry(
@@ -339,7 +331,7 @@ class OpenMetricsSensor(OpenMetricsBaseEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return the state attributes."""
         # Set resource related attributes
-        if isinstance(self.coordinator, get_coordinator_class()):
+        if isinstance(self.coordinator, OpenMetricsDataUpdateCoordinator):
             # Set device info attributes
             if self.entity_description.key == METRIC_DEVICE_NAME:
                 properties = {}

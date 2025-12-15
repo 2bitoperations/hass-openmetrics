@@ -87,7 +87,7 @@ class OpenMetricsBaseEntity(CoordinatorEntity):
         return self._attr_unique_id
 
 
-async def async_setup_entities(
+async def async_setup_entities[T: Entity](
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
