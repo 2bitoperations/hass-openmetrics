@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import ConfigFlowResult, OptionsFlow
 from homeassistant.const import (
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
@@ -36,12 +36,23 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
 
     metadata: MetadataData
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
+    def __init__(self) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
-        self.client = self._create_client(dict(config_entry.data))
+        # OpenMetrics client will be inizialized when config_entry is available
+        self._client: OpenMetricsClient | None = None
         # Entity manager will be initialized when hass is available
         self._entity_manager: OpenMetricsEntityManager | None = None
+
+    @property
+    def client(self) -> OpenMetricsClient:
+        """Get or create the OpenMetrics client instance."""
+        if self._client is None:
+            self._client = self._create_client(dict(self.config_entry.data))
+        if self._client is None:
+            raise HomeAssistantError(
+                "OpenMetrics client is not set for this config entry"
+            )
+        return self._client
 
     @property
     def entity_manager(self) -> OpenMetricsEntityManager:
