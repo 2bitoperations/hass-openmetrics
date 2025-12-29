@@ -13,6 +13,6 @@
   "issue_tracker": "https://github.com/txxa/hass-openmetrics/issues",
   "requirements": [],
   "ssdp": [],
-  "version": "0.3.2",
+  "version": "0.3.3",
   "zeroconf": []
 }
