@@ -202,16 +202,16 @@ class GenericProvider(MetricsProvider):
             # Validate and store filesystem
             if device and re.match(self.FILESYSTEM_DEVICE_VALUE_REGEX, device):
                 resource_info = self._get_or_create_resource(resources, name)
-                if not resource_info.filesystem_mountpoints:
-                    resource_info.filesystem_mountpoints = {}
+                if not resource_info.filesystems:
+                    resource_info.filesystems = {}
                 if mountpoint and re.match(
                     self.FILESYSTEM_MOUNTPOINT_VALUE_REGEX, mountpoint
                 ):
-                    resource_info.filesystem_mountpoints[mountpoint] = (
-                        get_appropriate_unit(sample.value)
+                    resource_info.filesystems[mountpoint] = get_appropriate_unit(
+                        sample.value
                     )
                 else:
-                    resource_info.filesystem_mountpoints[device] = get_appropriate_unit(
+                    resource_info.filesystems[device] = get_appropriate_unit(
                         sample.value
                     )
 

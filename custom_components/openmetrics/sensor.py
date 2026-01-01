@@ -216,10 +216,10 @@ def create_resource_sensors(
                     sensors.append(sensor)
             elif (
                 key in (METRIC_DISK_USAGE_BYTES, METRIC_DISK_USAGE_PCT)
-                and resource.filesystem_mountpoints
+                and resource.filesystems
             ):
-                for mountpoint, unit in resource.filesystem_mountpoints.items():
-                    changes = {"translation_placeholders": {"mountpoint": mountpoint}}
+                for filesystem, unit in resource.filesystems.items():
+                    changes = {"translation_placeholders": {"filesystem": filesystem}}
                     # For disk usage bytes, suggest the appropriate unit
                     if key == METRIC_DISK_USAGE_BYTES:
                         changes["suggested_unit_of_measurement"] = unit
@@ -228,7 +228,7 @@ def create_resource_sensors(
 
                     # Create sensor with modified description and identity
                     sensor = OpenMetricsSensor(
-                        coordinator, desc, device_info, mountpoint
+                        coordinator, desc, device_info, filesystem
                     )
                     sensors.append(sensor)
             # Create other sensors
@@ -397,7 +397,7 @@ class OpenMetricsSensor(OpenMetricsBaseEntity, SensorEntity):
             ):
                 disk_sizes = resource_data.get(PROPERTY_DISK_SIZE)
                 if self.identity and disk_sizes:
-                    # Return the disk size for the specific mountpoint
+                    # Return the disk size for the specific filesystem
                     if self.identity in disk_sizes:
                         # Value of PROPERTY_DISK_SIZE is the translation key
                         return {PROPERTY_DISK_SIZE: disk_sizes[self.identity]}

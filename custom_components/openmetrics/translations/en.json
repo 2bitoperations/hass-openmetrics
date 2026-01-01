@@ -51,7 +51,7 @@
                 }
             },
             "disk_usage_bytes": {
-                "name": "Filesystem usage ({mountpoint})",
+                "name": "Filesystem usage ({filesystem})",
                 "state_attributes": {
                     "disk_size": {
                         "name": "Filesystem size"
@@ -59,7 +59,7 @@
                 }
             },
             "disk_usage_pct": {
-                "name": "Filesystem usage ({mountpoint}) [percent]",
+                "name": "Filesystem usage ({filesystem}) [percent]",
                 "state_attributes": {
                     "disk_size": {
                         "name": "Filesystem size"

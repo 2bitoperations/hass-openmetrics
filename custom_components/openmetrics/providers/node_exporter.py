@@ -371,10 +371,10 @@ class NodeExporterProvider(MetricsProvider):
                 if mountpoint and re.match(
                     NODE_FILESYSTEM_MOUNTPOINT_LABEL_REGEX, mountpoint
                 ):
-                    if not resource_info.filesystem_mountpoints:
-                        resource_info.filesystem_mountpoints = {}
-                    resource_info.filesystem_mountpoints[mountpoint] = (
-                        get_appropriate_unit(sample.value)
+                    if not resource_info.filesystems:
+                        resource_info.filesystems = {}
+                    resource_info.filesystems[mountpoint] = get_appropriate_unit(
+                        sample.value
                     )
 
     def _handle_network_interface(

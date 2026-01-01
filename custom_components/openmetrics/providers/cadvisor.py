@@ -251,11 +251,9 @@ class CadvisorProvider(MetricsProvider):
                     resources, name, sample.labels
                 )
                 # Collect filesystems
-                if not resource_info.filesystem_mountpoints:
-                    resource_info.filesystem_mountpoints = {}
-                resource_info.filesystem_mountpoints[device] = get_appropriate_unit(
-                    sample.value
-                )
+                if not resource_info.filesystems:
+                    resource_info.filesystems = {}
+                resource_info.filesystems[device] = get_appropriate_unit(sample.value)
 
     def _handle_network_interfaces(self, family: Metric, resources: dict):
         """Handle network interface metrics."""
