@@ -2,7 +2,6 @@
 
 import re
 from datetime import datetime
-from math import floor
 from time import time
 from typing import Any
 
@@ -466,7 +465,7 @@ class CadvisorProvider(MetricsProvider):
             # Convert memory size to appropriate unit
             target_unit = get_appropriate_unit(memory_total_bytes)
             sensor_metrics[PROPERTY_MEMORY_SIZE] = (
-                f"{floor(convert_data_size(memory_total_bytes, target_unit))} {target_unit}"
+                f"{round(convert_data_size(memory_total_bytes, target_unit))} {target_unit}"
             )
         # Return values
         return sensor_metrics

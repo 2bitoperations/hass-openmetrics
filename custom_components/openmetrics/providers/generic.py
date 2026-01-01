@@ -2,7 +2,6 @@
 
 import re
 from datetime import datetime
-from math import floor
 from time import time
 from typing import Any
 
@@ -554,7 +553,7 @@ class GenericProvider(MetricsProvider):
             # Convert memory size to appropriate unit
             target_unit = get_appropriate_unit(memory_size)
             sensor_metrics[PROPERTY_MEMORY_SIZE] = (
-                f"{floor(convert_data_size(memory_size, target_unit))} {target_unit}"
+                f"{round(convert_data_size(memory_size, target_unit))} {target_unit}"
             )
         # Return values
         return sensor_metrics
@@ -625,11 +624,10 @@ class GenericProvider(MetricsProvider):
                     )
         # Set disk size
         if disk_total_bytes:
-            # Check if it's a dict (per-device/per-mountpoint) or scalar (single disk)
             if isinstance(disk_total_bytes, dict):
-                # Per-device/per-mountpoint metrics
                 if PROPERTY_DISK_SIZE not in sensor_metrics:
                     sensor_metrics[PROPERTY_DISK_SIZE] = {}
+                # Per-device/per-mountpoint metrics
                 for filesystem in disk_total_bytes:
                     total_bytes = disk_total_bytes.get(filesystem)
                     if total_bytes:
@@ -637,12 +635,6 @@ class GenericProvider(MetricsProvider):
                         sensor_metrics[PROPERTY_DISK_SIZE][filesystem] = (
                             f"{round(convert_data_size(total_bytes, target_unit))} {target_unit}"
                         )
-            else:
-                # Single disk (scalar)
-                target_unit = get_appropriate_unit(disk_total_bytes)
-                sensor_metrics[PROPERTY_DISK_SIZE] = (
-                    f"{round(convert_data_size(disk_total_bytes, target_unit))} {target_unit}"
-                )
         # Return values
         return sensor_metrics
 
