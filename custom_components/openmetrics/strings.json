@@ -74,10 +74,21 @@
             "invalid_auth": "Invalid authentication",
             "no_resources": "No resources selected",
             "no_metrics": "No metrics selected",
-            "unknown": "Unexpected error"
+            "unknown": "Unexpected error",
+            "resource_required": "A resource must be selected",
+            "resource_invalid": "Selected resource is not configured",
+            "query_required": "Metric query is required",
+            "query_invalid": "Invalid metric query format. Use: metric_name{label=\"value\"}",
+            "name_required": "Entity name is required"
         },
         "step": {
             "init": {
+                "menu_options": {
+                    "configure": "Configure resources and metrics",
+                    "custom_metrics": "Manage custom metric mappings"
+                }
+            },
+            "configure": {
                 "data": {
                     "resources": "Resources to be monitored",
                     "metrics": "Metrics to be collected",
@@ -85,6 +96,31 @@
                 },
                 "data_description": {
                     "metrics": "Note: The selection is applied to all resources."
+                }
+            },
+            "custom_metrics": {
+                "title": "Custom metric mappings",
+                "description": "Select a mapping to edit, or add a new one.",
+                "data": {
+                    "action": "Mapping"
+                }
+            },
+            "custom_metric_edit": {
+                "title": "Custom metric mapping",
+                "description": "Map a Prometheus metric selector to a Home Assistant sensor entity.",
+                "data": {
+                    "resource": "Device (resource)",
+                    "metric_query": "Prometheus metric selector",
+                    "entity_name": "Entity name",
+                    "unit": "Unit of measurement",
+                    "icon": "Icon (e.g. mdi:wifi)",
+                    "device_class": "Device class",
+                    "state_class": "State class",
+                    "display_precision": "Display precision (decimal places)",
+                    "delete": "Delete this mapping"
+                },
+                "data_description": {
+                    "metric_query": "Example: wifi_signal_dbm{ifname=\"wlan0\",ssid=\"MyNetwork\"}"
                 }
             }
         }

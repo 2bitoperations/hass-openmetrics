@@ -97,6 +97,13 @@ class OpenMetricsClient:
         families = self.processor.parse_data(response_text, content_type)
         return self.processor.extract_metrics(families, resources)
 
+    async def get_all_data(self, resources: list[str]) -> tuple[dict, list]:
+        """Fetch once and return both processed metrics and raw metric families."""
+        response_text, content_type = await self._async_request_data()
+        families = list(self.processor.parse_data(response_text, content_type))
+        metrics = self.processor.extract_metrics(families, resources)
+        return metrics, families
+
     def process_metrics(self, metrics: dict, update_interval: timedelta | None) -> dict:
         """Process metrics."""
         if update_interval is None or update_interval.seconds <= 0:

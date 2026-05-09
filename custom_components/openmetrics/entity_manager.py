@@ -11,10 +11,17 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.entity_platform import EntityPlatform
 
-from .const import CONF_METRICS, CONF_RESOURCES, DOMAIN
+from .const import (
+    CONF_CUSTOM_METRIC_ID,
+    CONF_CUSTOM_METRIC_RESOURCE,
+    CONF_CUSTOM_METRICS,
+    CONF_METRICS,
+    CONF_RESOURCES,
+    DOMAIN,
+)
 from .coordinator import OpenMetricsDataUpdateCoordinator
 from .metrics.data import MetadataData
-from .sensor import create_resource_sensors
+from .sensor import create_custom_metric_sensors, create_resource_sensors
 from .update import create_resource_update_entities
 
 _LOGGER = logging.getLogger(__name__)
@@ -308,3 +315,56 @@ class OpenMetricsEntityManager:
                 device_registry = self.hass.data[dr.DATA_REGISTRY]
                 device_registry.async_remove_device(device.id)
         return removed
+
+    # Custom metric management
+
+    async def update_custom_metrics(self, new_custom_metrics: list[dict]) -> None:
+        """Reconcile custom metric sensor entities with the new configuration list."""
+        current_custom_metrics = self.config_entry.data.get(CONF_CUSTOM_METRICS, [])
+        current_by_id = {cm[CONF_CUSTOM_METRIC_ID]: cm for cm in current_custom_metrics}
+        new_by_id = {cm[CONF_CUSTOM_METRIC_ID]: cm for cm in new_custom_metrics}
+
+        ids_to_remove = set(current_by_id) - set(new_by_id)
+        ids_to_add = set(new_by_id) - set(current_by_id)
+        ids_to_update = {
+            id_
+            for id_ in (set(current_by_id) & set(new_by_id))
+            if current_by_id[id_] != new_by_id[id_]
+        }
+
+        if ids_to_remove or ids_to_update:
+            await self._remove_custom_metrics_by_ids(ids_to_remove | ids_to_update)
+        for id_ in ids_to_add | ids_to_update:
+            await self._add_custom_metric(new_by_id[id_])
+
+        self.coordinator.custom_metrics = new_custom_metrics
+
+    async def _add_custom_metric(self, custom_metric: dict) -> None:
+        """Register a single custom metric sensor for its configured resource."""
+        resource_name = custom_metric.get(CONF_CUSTOM_METRIC_RESOURCE)
+        resource = self.coordinator.resources.get(resource_name) if resource_name else None
+        if not resource:
+            _LOGGER.error(
+                "Resource '%s' not found for custom metric '%s'",
+                resource_name,
+                custom_metric.get("entity_name"),
+            )
+            return
+        sensors = create_custom_metric_sensors(
+            resource, self.host, self.coordinator, [custom_metric]
+        )
+        if sensors:
+            sensor_platform = self.get_platform(Platform.SENSOR)
+            await sensor_platform.async_add_entities(sensors)
+
+    async def _remove_custom_metrics_by_ids(self, ids: set[str]) -> None:
+        """Remove custom metric sensor entities whose IDs are in the given set."""
+        entity_registry = self.hass.data[er.DATA_REGISTRY]
+        for entity_entry in list(entity_registry.entities.data.values()):
+            if entity_entry.config_entry_id != self.config_entry.entry_id:
+                continue
+            unique_id = entity_entry.unique_id or ""
+            for metric_id in ids:
+                if f"_custom_{metric_id}" in unique_id:
+                    entity_registry.async_remove(entity_entry.entity_id)
+                    break

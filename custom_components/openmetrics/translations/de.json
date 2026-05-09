@@ -142,10 +142,21 @@
             "invalid_auth": "Ungültige Authentifizierung",
             "no_resources": "Keine Ressourcen ausgewählt",
             "no_metrics": "Keine Metriken ausgewählt",
-            "unknown": "Unerwarteter Fehler"
+            "unknown": "Unerwarteter Fehler",
+            "resource_required": "Eine Ressource muss ausgewählt werden",
+            "resource_invalid": "Die ausgewählte Ressource ist nicht konfiguriert",
+            "query_required": "Metrik-Abfrage ist erforderlich",
+            "query_invalid": "Ungültiges Format. Beispiel: metrik_name{label=\"wert\"}",
+            "name_required": "Entitätsname ist erforderlich"
         },
         "step": {
             "init": {
+                "menu_options": {
+                    "configure": "Ressourcen und Metriken konfigurieren",
+                    "custom_metrics": "Eigene Metrik-Zuordnungen verwalten"
+                }
+            },
+            "configure": {
                 "data": {
                     "resources": "Zu überwachenden Ressourcen",
                     "metrics": "Zu sammelnden Metriken",
@@ -153,6 +164,31 @@
                 },
                 "data_description": {
                     "metrics": "Hinweis: Die Auswahl wird für alle Resourcen übernommen."
+                }
+            },
+            "custom_metrics": {
+                "title": "Eigene Metrik-Zuordnungen",
+                "description": "Zuordnung auswählen zum Bearbeiten oder neue hinzufügen.",
+                "data": {
+                    "action": "Zuordnung"
+                }
+            },
+            "custom_metric_edit": {
+                "title": "Eigene Metrik-Zuordnung",
+                "description": "Prometheus-Metrik-Selektor einer Home Assistant Sensor-Entität zuordnen.",
+                "data": {
+                    "resource": "Gerät (Ressource)",
+                    "metric_query": "Prometheus Metrik-Selektor",
+                    "entity_name": "Entitätsname",
+                    "unit": "Maßeinheit",
+                    "icon": "Icon (z.B. mdi:wifi)",
+                    "device_class": "Geräteklasse",
+                    "state_class": "Zustandsklasse",
+                    "display_precision": "Anzeigegenauigkeit (Dezimalstellen)",
+                    "delete": "Diese Zuordnung löschen"
+                },
+                "data_description": {
+                    "metric_query": "Beispiel: wifi_signal_dbm{ifname=\"wlan0\",ssid=\"MeinNetzwerk\"}"
                 }
             }
         }

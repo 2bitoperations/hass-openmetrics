@@ -17,10 +17,21 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
     DataUpdateCoordinator,
 )
 
 from .const import (
+    CONF_CUSTOM_METRIC_DEVICE_CLASS,
+    CONF_CUSTOM_METRIC_ICON,
+    CONF_CUSTOM_METRIC_ID,
+    CONF_CUSTOM_METRIC_NAME,
+    CONF_CUSTOM_METRIC_PRECISION,
+    CONF_CUSTOM_METRIC_RESOURCE,
+    CONF_CUSTOM_METRIC_STATE_CLASS,
+    CONF_CUSTOM_METRIC_UNIT,
+    CONF_CUSTOM_METRICS,
+    CUSTOM_METRIC_DATA_PREFIX,
     DOMAIN,
     METRIC_CPU_TEMP,
     METRIC_CPU_USAGE_PCT,
@@ -169,6 +180,18 @@ async def async_setup_entry(
 ) -> None:
     """Set up OpenMetrics sensors based on a config entry."""
     await async_setup_entities(hass, entry, async_add_entities, create_resource_sensors)
+    # Also register any configured custom metric sensors
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    host = hass.data[DOMAIN][entry.entry_id]["host"]
+    custom_metrics = entry.data.get(CONF_CUSTOM_METRICS, [])
+    if custom_metrics:
+        custom_sensors: list[OpenMetricsCustomSensor] = []
+        for resource in coordinator.resources.values():
+            custom_sensors.extend(
+                create_custom_metric_sensors(resource, host, coordinator, custom_metrics)
+            )
+        if custom_sensors:
+            async_add_entities(custom_sensors)
 
 
 def create_resource_sensors(
@@ -405,3 +428,66 @@ class OpenMetricsSensor(OpenMetricsBaseEntity, SensorEntity):
                         # Value of PROPERTY_NETWORK_SPEED is the translation key
                         return {PROPERTY_NETWORK_SPEED: network_speed[self.identity]}
             return None
+
+
+class OpenMetricsCustomSensor(CoordinatorEntity, SensorEntity):
+    """Sensor that maps an arbitrary Prometheus metric selector to a HA entity."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: DataUpdateCoordinator,
+        device_info: DeviceInfo,
+        custom_metric: dict,
+    ) -> None:
+        """Initialize the custom sensor."""
+        super().__init__(coordinator)
+        self.device_info = device_info
+        self._resource: str = custom_metric[CONF_CUSTOM_METRIC_RESOURCE]
+        self._data_key: str = CUSTOM_METRIC_DATA_PREFIX + custom_metric[CONF_CUSTOM_METRIC_ID]
+
+        self._attr_name = custom_metric[CONF_CUSTOM_METRIC_NAME]
+        if icon := custom_metric.get(CONF_CUSTOM_METRIC_ICON):
+            self._attr_icon = icon
+        if unit := custom_metric.get(CONF_CUSTOM_METRIC_UNIT):
+            self._attr_native_unit_of_measurement = unit
+        if precision := custom_metric.get(CONF_CUSTOM_METRIC_PRECISION):
+            self._attr_suggested_display_precision = int(precision)
+        if device_class := custom_metric.get(CONF_CUSTOM_METRIC_DEVICE_CLASS):
+            self._attr_device_class = device_class
+        if state_class := custom_metric.get(CONF_CUSTOM_METRIC_STATE_CLASS):
+            self._attr_state_class = state_class
+
+        identifier = next(iter(device_info.get("identifiers", {})))
+        self._attr_unique_id = (
+            f"{identifier[1]}_custom_{custom_metric[CONF_CUSTOM_METRIC_ID]}"
+        )
+        self.entity_id = f"sensor.{self._attr_unique_id}"
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the current sensor value."""
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get(self._resource, {}).get(self._data_key)
+
+
+def create_custom_metric_sensors(
+    resource: ResourceInfoData,
+    host: str,
+    coordinator: DataUpdateCoordinator,
+    custom_metrics: list[dict],
+) -> list[OpenMetricsCustomSensor]:
+    """Create custom metric sensor entities for a given resource."""
+    unique_id = f"{host}_{resource.name}"
+    if resource.is_virtual:
+        via_device = (DOMAIN, f"{host}_{resource.via_resource}")
+        device_info = create_device_info(unique_id, resource, via_device)
+    else:
+        device_info = create_device_info(unique_id, resource)
+    return [
+        OpenMetricsCustomSensor(coordinator, device_info, cm)
+        for cm in custom_metrics
+        if cm.get(CONF_CUSTOM_METRIC_RESOURCE) == resource.name
+    ]

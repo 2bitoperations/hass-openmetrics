@@ -23,7 +23,7 @@ from .client import (
     OpenMetricsClient,
     RequestError,
 )
-from .const import CONF_RESOURCES, DOMAIN
+from .const import CONF_CUSTOM_METRICS, CONF_RESOURCES, DOMAIN
 from .coordinator import OpenMetricsDataUpdateCoordinator
 from .entity_manager import OpenMetricsEntityManager
 
@@ -61,6 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 if resource_key in entry.data[CONF_RESOURCES] or resource.is_virtual
             },
             update_interval=int(entry.data[CONF_SCAN_INTERVAL]),
+            custom_metrics=entry.data.get(CONF_CUSTOM_METRICS, []),
         )
         # Create entity manager
         entity_manager = OpenMetricsEntityManager(hass, entry)
