@@ -16,6 +16,7 @@ from .client import (
     RequestError,
 )
 from .const import (
+    CONF_CUSTOM_METRIC_GROUP_BY,
     CONF_CUSTOM_METRIC_ID,
     CONF_CUSTOM_METRIC_NAME,
     CONF_CUSTOM_METRIC_QUERY,
@@ -23,7 +24,12 @@ from .const import (
     CUSTOM_METRIC_DATA_PREFIX,
     DOMAIN,
 )
-from .custom_metrics import extract_custom_metric_value, parse_metric_query
+from .custom_metrics import (
+    compute_fingerprint,
+    extract_custom_metric_value,
+    find_matching_samples,
+    parse_metric_query,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,6 +56,11 @@ class OpenMetricsDataUpdateCoordinator(DataUpdateCoordinator):
         self.resources = resources
         self.network_interfaces = None
         self.custom_metrics: list[dict] = custom_metrics or []
+        # Labels discovered per custom-metric-id → fingerprint → label dict
+        # (used by the wildcard sensor listener in sensor.py)
+        self.custom_metric_labels: dict[str, dict[str, dict[str, str]]] = {}
+        # Fingerprints that have already been turned into HA entities
+        self.registered_custom_fingerprints: dict[str, set[str]] = {}
 
     async def _async_update_data(self):
         """Fetch OpenMetrics data."""
@@ -67,17 +78,29 @@ class OpenMetricsDataUpdateCoordinator(DataUpdateCoordinator):
                 resource = cm.get(CONF_CUSTOM_METRIC_RESOURCE)
                 if not resource:
                     continue
-                if resource not in sensor_data:
-                    sensor_data[resource] = {}
+                cm_id = cm[CONF_CUSTOM_METRIC_ID]
+                group_by: list[str] = cm.get(CONF_CUSTOM_METRIC_GROUP_BY) or []
                 try:
-                    metric_name, label_filters = parse_metric_query(
-                        cm[CONF_CUSTOM_METRIC_QUERY]
-                    )
-                    value = extract_custom_metric_value(
-                        families, metric_name, label_filters
-                    )
-                    data_key = CUSTOM_METRIC_DATA_PREFIX + cm[CONF_CUSTOM_METRIC_ID]
-                    sensor_data[resource][data_key] = value
+                    metric_name, filters = parse_metric_query(cm[CONF_CUSTOM_METRIC_QUERY])
+                    if group_by:
+                        # Multi-value: one data key per fingerprint
+                        matches = find_matching_samples(families, metric_name, filters)
+                        if cm_id not in self.custom_metric_labels:
+                            self.custom_metric_labels[cm_id] = {}
+                        for value, sample_labels in matches:
+                            fp = compute_fingerprint(sample_labels, group_by)
+                            self.custom_metric_labels[cm_id][fp] = sample_labels
+                            if resource not in sensor_data:
+                                sensor_data[resource] = {}
+                            data_key = f"{CUSTOM_METRIC_DATA_PREFIX}{cm_id}__{fp}"
+                            sensor_data[resource][data_key] = value
+                    else:
+                        # Single-value: first match
+                        if resource not in sensor_data:
+                            sensor_data[resource] = {}
+                        value = extract_custom_metric_value(families, metric_name, filters)
+                        data_key = CUSTOM_METRIC_DATA_PREFIX + cm_id
+                        sensor_data[resource][data_key] = value
                 except (ValueError, KeyError) as e:
                     _LOGGER.warning(
                         "Failed to extract custom metric '%s': %s",

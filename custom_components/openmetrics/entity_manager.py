@@ -12,6 +12,7 @@ from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.entity_platform import EntityPlatform
 
 from .const import (
+    CONF_CUSTOM_METRIC_GROUP_BY,
     CONF_CUSTOM_METRIC_ID,
     CONF_CUSTOM_METRIC_RESOURCE,
     CONF_CUSTOM_METRICS,
@@ -340,7 +341,14 @@ class OpenMetricsEntityManager:
         self.coordinator.custom_metrics = new_custom_metrics
 
     async def _add_custom_metric(self, custom_metric: dict) -> None:
-        """Register a single custom metric sensor for its configured resource."""
+        """Register a single custom metric sensor for its configured resource.
+
+        For group_by (wildcard) metrics the coordinator listener in sensor.py will
+        create the individual instances after the next data refresh; nothing to do here
+        beyond ensuring coordinator.custom_metrics is up-to-date (done by the caller).
+        """
+        if custom_metric.get(CONF_CUSTOM_METRIC_GROUP_BY):
+            return  # Listener handles it
         resource_name = custom_metric.get(CONF_CUSTOM_METRIC_RESOURCE)
         resource = self.coordinator.resources.get(resource_name) if resource_name else None
         if not resource:
@@ -367,4 +375,7 @@ class OpenMetricsEntityManager:
             for metric_id in ids:
                 if f"_custom_{metric_id}" in unique_id:
                     entity_registry.async_remove(entity_entry.entity_id)
+                    # Clear coordinator state so the listener can rediscover
+                    self.coordinator.registered_custom_fingerprints.pop(metric_id, None)
+                    self.coordinator.custom_metric_labels.pop(metric_id, None)
                     break

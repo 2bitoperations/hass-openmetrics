@@ -179,6 +179,7 @@
                 "data": {
                     "resource": "Device (resource)",
                     "metric_query": "Prometheus metric selector",
+                    "group_by": "Group-by labels (comma-separated)",
                     "entity_name": "Entity name",
                     "unit": "Unit of measurement",
                     "icon": "Icon (e.g. mdi:wifi)",
@@ -188,7 +189,9 @@
                     "delete": "Delete this mapping"
                 },
                 "data_description": {
-                    "metric_query": "Example: wifi_signal_dbm{ifname=\"wlan0\",ssid=\"MyNetwork\"}"
+                    "metric_query": "Supports =, !=, =~ (regex), !~ operators. Example: wifi_signal_dbm{ifname=~\"wlan.*\"}",
+                    "group_by": "Creates one sensor per unique label combination. Use {label} placeholders in the entity name. Example: ifname, ssid",
+                    "entity_name": "Supports {label} placeholders when group_by is set. Example: WiFi ({ifname})"
                 }
             }
         }

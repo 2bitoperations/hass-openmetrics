@@ -30,6 +30,7 @@ from homeassistant.helpers.selector import (
 from .client import CannotConnectError, InvalidAuthError, OpenMetricsClient
 from .const import (
     CONF_CUSTOM_METRIC_DEVICE_CLASS,
+    CONF_CUSTOM_METRIC_GROUP_BY,
     CONF_CUSTOM_METRIC_ICON,
     CONF_CUSTOM_METRIC_ID,
     CONF_CUSTOM_METRIC_NAME,
@@ -427,6 +428,14 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
                 CONF_CUSTOM_METRIC_QUERY,
                 description={"suggested_value": existing.get(CONF_CUSTOM_METRIC_QUERY, "")},
             ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+            vol.Optional(
+                CONF_CUSTOM_METRIC_GROUP_BY,
+                description={
+                    "suggested_value": ", ".join(
+                        existing.get(CONF_CUSTOM_METRIC_GROUP_BY) or []
+                    )
+                },
+            ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
             vol.Required(
                 CONF_CUSTOM_METRIC_NAME,
                 description={"suggested_value": existing.get(CONF_CUSTOM_METRIC_NAME, "")},
@@ -504,6 +513,13 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
             CONF_CUSTOM_METRIC_QUERY: query,
             CONF_CUSTOM_METRIC_NAME: name,
         }
+        group_by_raw = data.get(CONF_CUSTOM_METRIC_GROUP_BY, "")
+        if isinstance(group_by_raw, list):
+            group_by = [s.strip() for s in group_by_raw if str(s).strip()]
+        else:
+            group_by = [s.strip() for s in str(group_by_raw).split(",") if s.strip()]
+        if group_by:
+            result[CONF_CUSTOM_METRIC_GROUP_BY] = group_by
         if unit := data.get(CONF_CUSTOM_METRIC_UNIT, "").strip():
             result[CONF_CUSTOM_METRIC_UNIT] = unit
         if icon := data.get(CONF_CUSTOM_METRIC_ICON, "").strip():

@@ -1,5 +1,6 @@
 """Definition for OpenMetrics sensors."""
 
+import re
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
@@ -12,7 +13,7 @@ from homeassistant.const import (
     UnitOfTemperature,
     UnitOfTime,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
@@ -23,6 +24,7 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import (
     CONF_CUSTOM_METRIC_DEVICE_CLASS,
+    CONF_CUSTOM_METRIC_GROUP_BY,
     CONF_CUSTOM_METRIC_ICON,
     CONF_CUSTOM_METRIC_ID,
     CONF_CUSTOM_METRIC_NAME,
@@ -180,18 +182,75 @@ async def async_setup_entry(
 ) -> None:
     """Set up OpenMetrics sensors based on a config entry."""
     await async_setup_entities(hass, entry, async_add_entities, create_resource_sensors)
-    # Also register any configured custom metric sensors
+
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     host = hass.data[DOMAIN][entry.entry_id]["host"]
     custom_metrics = entry.data.get(CONF_CUSTOM_METRICS, [])
-    if custom_metrics:
-        custom_sensors: list[OpenMetricsCustomSensor] = []
-        for resource in coordinator.resources.values():
-            custom_sensors.extend(
-                create_custom_metric_sensors(resource, host, coordinator, custom_metrics)
-            )
-        if custom_sensors:
-            async_add_entities(custom_sensors)
+
+    if not custom_metrics:
+        return
+
+    # Single-value custom sensors (no group_by) are created immediately
+    single_value: list[OpenMetricsCustomSensor] = []
+    for resource in coordinator.resources.values():
+        single_value.extend(
+            create_custom_metric_sensors(resource, host, coordinator, custom_metrics)
+        )
+    if single_value:
+        async_add_entities(single_value)
+
+    # Wildcard / multi-value sensors are discovered dynamically after each coordinator
+    # update, because we don't know which label combinations exist until we have data.
+    @callback
+    def _discover_wildcard_sensors() -> None:
+        if not coordinator.data:
+            return
+        new_sensors: list[OpenMetricsCustomSensor] = []
+        for cm in coordinator.custom_metrics:
+            group_by: list[str] = cm.get(CONF_CUSTOM_METRIC_GROUP_BY) or []
+            if not group_by:
+                continue
+            cm_id = cm[CONF_CUSTOM_METRIC_ID]
+            resource_name = cm.get(CONF_CUSTOM_METRIC_RESOURCE)
+            resource = coordinator.resources.get(resource_name) if resource_name else None
+            if not resource:
+                continue
+
+            if cm_id not in coordinator.registered_custom_fingerprints:
+                coordinator.registered_custom_fingerprints[cm_id] = set()
+
+            for fp, labels in coordinator.custom_metric_labels.get(cm_id, {}).items():
+                if fp in coordinator.registered_custom_fingerprints[cm_id]:
+                    continue
+                coordinator.registered_custom_fingerprints[cm_id].add(fp)
+
+                entity_name = cm[CONF_CUSTOM_METRIC_NAME]
+                try:
+                    entity_name = entity_name.format_map(labels)
+                except (KeyError, ValueError):
+                    pass
+
+                unique_id = f"{host}_{resource_name}"
+                if resource.is_virtual:
+                    via_device = (DOMAIN, f"{host}_{resource.via_resource}")
+                    device_info = create_device_info(unique_id, resource, via_device)
+                else:
+                    device_info = create_device_info(unique_id, resource)
+
+                new_sensors.append(
+                    OpenMetricsCustomSensor(
+                        coordinator,
+                        device_info,
+                        cm,
+                        fingerprint=fp,
+                        entity_name=entity_name,
+                    )
+                )
+
+        if new_sensors:
+            async_add_entities(new_sensors)
+
+    entry.async_on_unload(coordinator.async_add_listener(_discover_wildcard_sensors))
 
 
 def create_resource_sensors(
@@ -431,7 +490,12 @@ class OpenMetricsSensor(OpenMetricsBaseEntity, SensorEntity):
 
 
 class OpenMetricsCustomSensor(CoordinatorEntity, SensorEntity):
-    """Sensor that maps an arbitrary Prometheus metric selector to a HA entity."""
+    """Sensor that maps an arbitrary Prometheus metric selector to a HA entity.
+
+    For single-value configs (no group_by): one sensor, data key = _custom_<id>.
+    For multi-value configs (group_by set):  one sensor per fingerprint,
+        data key = _custom_<id>__<fingerprint>, entity name resolved from template.
+    """
 
     _attr_has_entity_name = True
 
@@ -440,14 +504,30 @@ class OpenMetricsCustomSensor(CoordinatorEntity, SensorEntity):
         coordinator: DataUpdateCoordinator,
         device_info: DeviceInfo,
         custom_metric: dict,
+        fingerprint: str | None = None,
+        entity_name: str | None = None,
     ) -> None:
-        """Initialize the custom sensor."""
+        """Initialize the custom sensor.
+
+        fingerprint: non-None for wildcard/multi-value instances.
+        entity_name: pre-resolved template name; falls back to configured name.
+        """
         super().__init__(coordinator)
         self.device_info = device_info
         self._resource: str = custom_metric[CONF_CUSTOM_METRIC_RESOURCE]
-        self._data_key: str = CUSTOM_METRIC_DATA_PREFIX + custom_metric[CONF_CUSTOM_METRIC_ID]
+        cm_id = custom_metric[CONF_CUSTOM_METRIC_ID]
 
-        self._attr_name = custom_metric[CONF_CUSTOM_METRIC_NAME]
+        if fingerprint is not None:
+            self._data_key = f"{CUSTOM_METRIC_DATA_PREFIX}{cm_id}__{fingerprint}"
+            safe_fp = re.sub(r"[^a-zA-Z0-9_]", "_", fingerprint)
+            self._attr_unique_id = f"{next(iter(device_info.get('identifiers', {})))[1]}_custom_{cm_id}__{safe_fp}"
+        else:
+            self._data_key = CUSTOM_METRIC_DATA_PREFIX + cm_id
+            self._attr_unique_id = (
+                f"{next(iter(device_info.get('identifiers', {})))[1]}_custom_{cm_id}"
+            )
+
+        self._attr_name = entity_name or custom_metric[CONF_CUSTOM_METRIC_NAME]
         if icon := custom_metric.get(CONF_CUSTOM_METRIC_ICON):
             self._attr_icon = icon
         if unit := custom_metric.get(CONF_CUSTOM_METRIC_UNIT):
@@ -459,10 +539,6 @@ class OpenMetricsCustomSensor(CoordinatorEntity, SensorEntity):
         if state_class := custom_metric.get(CONF_CUSTOM_METRIC_STATE_CLASS):
             self._attr_state_class = state_class
 
-        identifier = next(iter(device_info.get("identifiers", {})))
-        self._attr_unique_id = (
-            f"{identifier[1]}_custom_{custom_metric[CONF_CUSTOM_METRIC_ID]}"
-        )
         self.entity_id = f"sensor.{self._attr_unique_id}"
 
     @property
@@ -479,7 +555,11 @@ def create_custom_metric_sensors(
     coordinator: DataUpdateCoordinator,
     custom_metrics: list[dict],
 ) -> list[OpenMetricsCustomSensor]:
-    """Create custom metric sensor entities for a given resource."""
+    """Create single-value custom metric sensors for a resource.
+
+    Multi-value (group_by) sensors are created dynamically by the coordinator
+    listener registered in async_setup_entry and are excluded here.
+    """
     unique_id = f"{host}_{resource.name}"
     if resource.is_virtual:
         via_device = (DOMAIN, f"{host}_{resource.via_resource}")
@@ -490,4 +570,5 @@ def create_custom_metric_sensors(
         OpenMetricsCustomSensor(coordinator, device_info, cm)
         for cm in custom_metrics
         if cm.get(CONF_CUSTOM_METRIC_RESOURCE) == resource.name
+        and not cm.get(CONF_CUSTOM_METRIC_GROUP_BY)
     ]

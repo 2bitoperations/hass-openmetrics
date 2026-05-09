@@ -179,6 +179,7 @@
                 "data": {
                     "resource": "Gerät (Ressource)",
                     "metric_query": "Prometheus Metrik-Selektor",
+                    "group_by": "Gruppierungslabels (kommagetrennt)",
                     "entity_name": "Entitätsname",
                     "unit": "Maßeinheit",
                     "icon": "Icon (z.B. mdi:wifi)",
@@ -188,7 +189,9 @@
                     "delete": "Diese Zuordnung löschen"
                 },
                 "data_description": {
-                    "metric_query": "Beispiel: wifi_signal_dbm{ifname=\"wlan0\",ssid=\"MeinNetzwerk\"}"
+                    "metric_query": "Unterstützt =, !=, =~ (Regex), !~. Beispiel: wifi_signal_dbm{ifname=~\"wlan.*\"}",
+                    "group_by": "Erstellt einen Sensor pro Label-Kombination. {label}-Platzhalter im Entitätsnamen verwenden. Beispiel: ifname, ssid",
+                    "entity_name": "Unterstützt {label}-Platzhalter wenn group_by gesetzt. Beispiel: WLAN ({ifname})"
                 }
             }
         }
