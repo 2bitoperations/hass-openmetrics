@@ -538,7 +538,8 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Import custom metric mappings from a pasted JSON array."""
         errors: dict[str, str] = {}
-        description_placeholders: dict[str, str] = {}
+        # Always supply the placeholder so the description template renders cleanly.
+        validation_errors = ""
 
         if user_input is not None:
             raw = user_input.get("json_data", "").strip()
@@ -576,7 +577,8 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
 
                     if item_errors:
                         errors["base"] = "import_item_error"
-                        description_placeholders["error_detail"] = "; ".join(item_errors)
+                        validation_errors = "\n".join(f"• {e}" for e in item_errors)
+                        _LOGGER.error("Custom metric import validation errors: %s", "; ".join(item_errors))
                     else:
                         merged = list(existing_by_id.values())
                         await self._save_custom_metrics(merged)
@@ -587,12 +589,15 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Required("json_data"): TextSelector(
-                        TextSelectorConfig(type=TextSelectorType.TEXT, multiline=True)
+                        TextSelectorConfig(
+                            type=TextSelectorType.TEXT,
+                            multiline=True,
+                        )
                     )
                 }
             ),
             errors=errors,
-            description_placeholders=description_placeholders or None,
+            description_placeholders={"validation_errors": validation_errors},
         )
 
     async def _save_custom_metrics(self, new_list: list[dict]) -> None:
