@@ -1,5 +1,6 @@
 """Options flow for openmetrics integration."""
 
+import json
 import logging
 from datetime import timedelta
 from typing import Any
@@ -173,7 +174,7 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
         """Show the main options menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["configure", "custom_metrics"],
+            menu_options=["configure", "custom_metrics", "import_custom_metrics"],
         )
 
     # ---------------------------------------------------------------------------
@@ -531,6 +532,68 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
         if (precision := data.get(CONF_CUSTOM_METRIC_PRECISION)) is not None:
             result[CONF_CUSTOM_METRIC_PRECISION] = int(precision)
         return result
+
+    async def async_step_import_custom_metrics(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Import custom metric mappings from a pasted JSON array."""
+        errors: dict[str, str] = {}
+        description_placeholders: dict[str, str] = {}
+
+        if user_input is not None:
+            raw = user_input.get("json_data", "").strip()
+            try:
+                parsed = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                errors["base"] = "import_invalid_json"
+            else:
+                if not isinstance(parsed, list):
+                    errors["base"] = "import_not_array"
+                else:
+                    configured_resources = self._get_configured_resources()
+                    new_list = self._current_custom_metrics()
+                    existing_by_id = {cm[CONF_CUSTOM_METRIC_ID]: cm for cm in new_list}
+                    item_errors: list[str] = []
+
+                    for i, item in enumerate(parsed):
+                        label = item.get(CONF_CUSTOM_METRIC_NAME, f"item {i + 1}") if isinstance(item, dict) else f"item {i + 1}"
+                        if not isinstance(item, dict):
+                            item_errors.append(f"{label}: not an object")
+                            continue
+                        try:
+                            validated = self._validate_custom_metric_input(item, configured_resources)
+                        except ValueError as exc:
+                            item_errors.append(f"{label}: {exc}")
+                            continue
+
+                        item_id = item.get(CONF_CUSTOM_METRIC_ID)
+                        if item_id and item_id in existing_by_id:
+                            validated[CONF_CUSTOM_METRIC_ID] = item_id
+                            existing_by_id[item_id] = validated
+                        else:
+                            validated[CONF_CUSTOM_METRIC_ID] = generate_custom_metric_id()
+                            existing_by_id[validated[CONF_CUSTOM_METRIC_ID]] = validated
+
+                    if item_errors:
+                        errors["base"] = "import_item_error"
+                        description_placeholders["error_detail"] = "; ".join(item_errors)
+                    else:
+                        merged = list(existing_by_id.values())
+                        await self._save_custom_metrics(merged)
+                        return await self.async_step_custom_metrics()
+
+        return self.async_show_form(
+            step_id="import_custom_metrics",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("json_data"): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.TEXT, multiline=True)
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders=description_placeholders or None,
+        )
 
     async def _save_custom_metrics(self, new_list: list[dict]) -> None:
         """Persist updated custom metrics list and reconcile HA entities."""

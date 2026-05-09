@@ -147,13 +147,17 @@
             "resource_invalid": "Die ausgewählte Ressource ist nicht konfiguriert",
             "query_required": "Metrik-Abfrage ist erforderlich",
             "query_invalid": "Ungültiges Format. Beispiel: metrik_name{label=\"wert\"}",
-            "name_required": "Entitätsname ist erforderlich"
+            "name_required": "Entitätsname ist erforderlich",
+            "import_invalid_json": "JSON konnte nicht verarbeitet werden. Bitte gültiges JSON eingeben.",
+            "import_not_array": "Es wird ein JSON-Array erwartet (beginnend mit [).",
+            "import_item_error": "Validierung fehlgeschlagen: {error_detail}"
         },
         "step": {
             "init": {
                 "menu_options": {
                     "configure": "Ressourcen und Metriken konfigurieren",
-                    "custom_metrics": "Eigene Metrik-Zuordnungen verwalten"
+                    "custom_metrics": "Eigene Metrik-Zuordnungen verwalten",
+                    "import_custom_metrics": "Metrik-Zuordnungen aus JSON importieren"
                 }
             },
             "configure": {
@@ -171,6 +175,13 @@
                 "description": "Zuordnung auswählen zum Bearbeiten oder neue hinzufügen.",
                 "data": {
                     "action": "Zuordnung"
+                }
+            },
+            "import_custom_metrics": {
+                "title": "Metrik-Zuordnungen importieren",
+                "description": "JSON-Array mit Metrik-Zuordnungen einfügen. Jeder Eintrag muss mindestens `resource`, `metric_query` und `entity_name` enthalten. Einträge mit übereinstimmender `id` aktualisieren bestehende Zuordnungen; andere werden hinzugefügt.",
+                "data": {
+                    "json_data": "JSON"
                 }
             },
             "custom_metric_edit": {
