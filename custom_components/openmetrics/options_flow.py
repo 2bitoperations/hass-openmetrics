@@ -541,7 +541,10 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
         # Always supply the placeholder so the description template renders cleanly.
         validation_errors = ""
 
+        configured_resources = self._get_configured_resources()
+
         if user_input is not None:
+            resource = user_input.get(CONF_CUSTOM_METRIC_RESOURCE, "").strip()
             raw = user_input.get("json_data", "").strip()
             try:
                 parsed = json.loads(raw)
@@ -551,16 +554,17 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
                 if not isinstance(parsed, list):
                     errors["base"] = "import_not_array"
                 else:
-                    configured_resources = self._get_configured_resources()
                     new_list = self._current_custom_metrics()
                     existing_by_id = {cm[CONF_CUSTOM_METRIC_ID]: cm for cm in new_list}
                     item_errors: list[str] = []
 
                     for i, item in enumerate(parsed):
-                        label = item.get(CONF_CUSTOM_METRIC_NAME, f"item {i + 1}") if isinstance(item, dict) else f"item {i + 1}"
                         if not isinstance(item, dict):
-                            item_errors.append(f"{label}: not an object")
+                            item_errors.append(f"item {i + 1}: not an object")
                             continue
+                        # Inject the form-selected resource, overriding anything in the JSON.
+                        item = {**item, CONF_CUSTOM_METRIC_RESOURCE: resource}
+                        label = item.get(CONF_CUSTOM_METRIC_NAME, f"item {i + 1}")
                         try:
                             validated = self._validate_custom_metric_input(item, configured_resources)
                         except ValueError as exc:
@@ -584,16 +588,24 @@ class OpenMetricsOptionsFlowHandler(OptionsFlow):
                         await self._save_custom_metrics(merged)
                         return await self.async_step_custom_metrics()
 
+        resource_options = [{"value": r, "label": r} for r in configured_resources]
+
         return self.async_show_form(
             step_id="import_custom_metrics",
             data_schema=vol.Schema(
                 {
+                    vol.Required(CONF_CUSTOM_METRIC_RESOURCE): SelectSelector(
+                        SelectSelectorConfig(
+                            options=resource_options,
+                            mode=SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                     vol.Required("json_data"): TextSelector(
                         TextSelectorConfig(
                             type=TextSelectorType.TEXT,
                             multiline=True,
                         )
-                    )
+                    ),
                 }
             ),
             errors=errors,

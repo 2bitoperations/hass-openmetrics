@@ -179,8 +179,9 @@
             },
             "import_custom_metrics": {
                 "title": "Import metric mappings",
-                "description": "Paste a JSON array of metric mapping definitions. Each item must include `resource` (must match a configured resource exactly), `metric_query`, and `entity_name`. Items with a matching `id` update the existing mapping; others are appended.{validation_errors}",
+                "description": "Select the device to assign all imported metrics to, then paste a JSON array. Each item needs `metric_query` and `entity_name`. Items with a matching `id` update the existing mapping; others are appended.{validation_errors}",
                 "data": {
+                    "resource": "Device (resource)",
                     "json_data": "Metric definitions (JSON array)"
                 }
             },

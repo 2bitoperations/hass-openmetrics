@@ -179,8 +179,9 @@
             },
             "import_custom_metrics": {
                 "title": "Metrik-Zuordnungen importieren",
-                "description": "JSON-Array mit Metrik-Zuordnungen einfügen. Jeder Eintrag muss `resource` (muss exakt mit einer konfigurierten Ressource übereinstimmen), `metric_query` und `entity_name` enthalten. Einträge mit übereinstimmender `id` aktualisieren bestehende Zuordnungen; andere werden hinzugefügt.{validation_errors}",
+                "description": "Gerät auswählen, dem alle importierten Metriken zugewiesen werden, dann JSON-Array einfügen. Jeder Eintrag benötigt `metric_query` und `entity_name`. Einträge mit übereinstimmender `id` aktualisieren bestehende Zuordnungen; andere werden hinzugefügt.{validation_errors}",
                 "data": {
+                    "resource": "Gerät (Ressource)",
                     "json_data": "Metrik-Definitionen (JSON-Array)"
                 }
             },
